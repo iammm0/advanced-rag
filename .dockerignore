@@ -1,0 +1,91 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 环境变量文件（生产环境配置在 Dockerfile 中明确复制）
+.env
+.env.local
+.env.development
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 日志文件
+logs/
+*.log
+*.log.*
+
+# 上传文件（应该使用卷挂载）
+uploads/
+*.pdf
+*.doc
+*.docx
+# 注意：requirements.txt 需要包含，所以不排除所有 .txt 文件
+# 只排除特定的文本文件
+# *.txt  # 已注释，因为 requirements.txt 需要包含
+*.md
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# 注意：vendor目录需要包含在Docker镜像中（用于本地GitHub依赖）
+# vendor目录不会被排除，确保构建时可以使用本地依赖
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# 文档和说明（可选，如果需要可以包含）
+# README.md
+# *.md
+
+# 提交信息文件
+commit*.txt
+commit_msg.txt
+
+# 其他不需要的文件
+*.pyc
+*.pyo
+*.pyd
+

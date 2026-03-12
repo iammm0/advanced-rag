@@ -1,0 +1,1302 @@
+"""对话历史管理路由"""
+import json
+import os
+import uuid
+import asyncio
+from datetime import datetime, timezone
+from typing import Optional, List
+
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, BackgroundTasks, Form, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+from database.mongodb import mongodb
+from utils.logger import logger
+from utils.timezone import beijing_now
+
+router = APIRouter()
+
+
+class ChatMessage(BaseModel):
+    """聊天消息模型"""
+    role: str  # "user" or "assistant"
+    content: str
+    timestamp: Optional[datetime] = None
+    sources: Optional[List[dict]] = None  # 检索到的文档来源
+    recommended_resources: Optional[List[dict]] = None  # 推荐的相关资源
+
+
+class Conversation(BaseModel):
+    """对话模型"""
+    id: str
+    user_id: Optional[str] = None  # 用户ID（认证后使用）
+    title: str
+    messages: List[ChatMessage]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationCreate(BaseModel):
+    """创建对话请求"""
+    title: Optional[str] = None
+    user_id: Optional[str] = None
+    assistant_id: Optional[str] = None  # 助手ID
+
+
+class ConversationUpdate(BaseModel):
+    """更新对话请求"""
+    title: Optional[str] = None
+
+
+class MessageAdd(BaseModel):
+    """添加消息请求"""
+    role: str
+    content: str
+    sources: Optional[List[dict]] = None
+    recommended_resources: Optional[List[dict]] = None
+
+
+class MessageUpdate(BaseModel):
+    """更新消息请求"""
+    content: str
+
+
+class ChatRequest(BaseModel):
+    """常规对话请求"""
+    query: str
+    assistant_id: Optional[str] = None
+    knowledge_space_ids: Optional[List[str]] = None  # 发起增强检索前可选知识空间（可多选）
+    conversation_id: Optional[str] = None
+    enable_rag: bool = True  # 是否启用RAG检索
+    mode: str = "normal"  # 模式：normal（普通模式）或 network（网络检索模式）
+
+
+class DeepResearchRequest(BaseModel):
+    """深度研究模式请求（BETA）"""
+    query: str
+    assistant_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+    enabled_agents: Optional[List[str]] = None  # 启用的专家Agent列表
+
+
+@router.post("/conversations")
+async def create_conversation(
+    request: ConversationCreate
+):
+    """
+    创建新对话
+    """
+    logger.info(f"创建对话请求 - 标题: {request.title}")
+    try:
+        conversation_id = str(uuid.uuid4())
+        now = beijing_now()
+        
+        # 如果没有提供assistant_id，获取默认助手
+        assistant_id = request.assistant_id
+        if not assistant_id:
+            try:
+                assistant_collection = mongodb.get_collection("course_assistants")
+                default_assistant = await assistant_collection.find_one({"is_default": True})
+                if default_assistant:
+                    assistant_id = str(default_assistant["_id"])
+            except Exception as e:
+                logger.warning(f"获取默认助手失败: {str(e)}")
+        
+        # 匿名模式：不关联用户
+        conversation = {
+            "_id": conversation_id,
+            "user_id": None,
+            "title": request.title or "新对话",
+            "assistant_id": assistant_id,  # 关联助手ID
+            "messages": [],
+            "created_at": now,
+            "updated_at": now
+        }
+        
+        collection = mongodb.get_collection("conversations")
+        await collection.insert_one(conversation)
+        
+        logger.info(f"创建对话成功 - 对话ID: {conversation_id}")
+        
+        return {
+            "id": conversation_id,
+            "title": conversation["title"],
+            "assistant_id": assistant_id,
+            "created_at": conversation["created_at"].isoformat(),
+            "updated_at": conversation["updated_at"].isoformat()
+        }
+    except Exception as e:
+        logger.error(f"创建对话失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建对话失败: {str(e)}"
+        )
+
+
+@router.get("/conversations")
+async def list_conversations(
+    skip: int = 0,
+    limit: int = 100,
+):
+    """
+    获取对话列表
+    普通用户只能看到自己的对话，管理员可以看到所有对话
+    """
+    logger.info(f"获取对话列表请求 - skip: {skip}, limit: {limit}")
+    try:
+        collection = mongodb.get_collection("conversations")
+        cursor = collection.find({}).sort("updated_at", -1).skip(skip).limit(limit)
+        conversations = []
+        
+        async for doc in cursor:
+            conversations.append({
+                "id": str(doc["_id"]),
+                "user_id": doc.get("user_id"),
+                "title": doc.get("title", "未命名对话"),
+                "message_count": len(doc.get("messages", [])),
+                "assistant_id": doc.get("assistant_id"),
+                "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
+                "updated_at": doc.get("updated_at").isoformat() if doc.get("updated_at") else None
+            })
+        
+        total = await collection.count_documents({})
+        
+        logger.info(f"获取对话列表成功 - 数量: {len(conversations)}")
+        
+        return {
+            "conversations": conversations,
+            "total": total,
+            "skip": skip,
+            "limit": limit
+        }
+    except Exception as e:
+        logger.error(f"获取对话列表失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取对话列表失败: {str(e)}"
+        )
+
+
+@router.get("/conversations/{conversation_id}")
+async def get_conversation(
+    conversation_id: str,
+):
+    """
+    获取对话详情（包含所有消息）
+    普通用户只能访问自己的对话，管理员可以访问所有对话
+    """
+    logger.info(f"获取对话详情请求 - 对话ID: {conversation_id}")
+    try:
+        collection = mongodb.get_collection("conversations")
+        
+        doc = await collection.find_one({"_id": conversation_id})
+        
+        if not doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="对话不存在"
+            )
+        
+        messages = []
+        for msg in doc.get("messages", []):
+            messages.append({
+                "message_id": msg.get("message_id"),  # 返回消息ID
+                "role": msg.get("role"),
+                "content": msg.get("content"),
+                "timestamp": msg.get("timestamp").isoformat() if msg.get("timestamp") else None,
+                "sources": msg.get("sources", []),
+                "recommended_resources": msg.get("recommended_resources", [])
+            })
+        
+        return {
+            "id": str(doc["_id"]),
+            "user_id": doc.get("user_id"),
+            "title": doc.get("title", "未命名对话"),
+            "assistant_id": doc.get("assistant_id"),
+            "messages": messages,
+            "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
+            "updated_at": doc.get("updated_at").isoformat() if doc.get("updated_at") else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取对话详情失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取对话详情失败: {str(e)}"
+        )
+
+
+@router.post("/conversations/{conversation_id}/messages")
+async def add_message(
+    conversation_id: str,
+    message: MessageAdd,
+):
+    """
+    向对话添加消息（匿名模式）
+    """
+    logger.info(f"添加消息请求 - 对话ID: {conversation_id}, 角色: {message.role}, 内容长度: {len(message.content)}")
+    try:
+        collection = mongodb.get_collection("conversations")
+        
+        # 检查对话是否存在
+        doc = await collection.find_one({"_id": conversation_id})
+        if not doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="对话不存在"
+            )
+        
+        msg_dict = {
+            "message_id": str(uuid.uuid4()),  # 为消息添加唯一ID
+            "role": message.role,
+            "content": message.content,
+            "timestamp": beijing_now(),
+            "sources": message.sources or [],
+            "recommended_resources": message.recommended_resources or []
+        }
+        
+        result = await collection.update_one(
+            {"_id": conversation_id},
+            {
+                "$push": {"messages": msg_dict},
+                "$set": {"updated_at": beijing_now()}
+            }
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="对话不存在"
+            )
+        
+        # 如果是助手回复，且对话标题还是默认标题，则自动生成标题
+        if message.role == "assistant":
+            updated_doc = await collection.find_one({"_id": conversation_id})
+            if updated_doc:
+                current_title = updated_doc.get("title", "")
+                # 如果标题是默认标题（如"新对话"）或标题是用户消息的前30个字符，则生成新标题
+                if current_title in ["新对话", "新对话..."] or len(current_title) <= 5:
+                    try:
+                        from services.title_generator import title_generator
+                        messages_list = updated_doc.get("messages", [])
+                        # 转换为标题生成器需要的格式
+                        formatted_messages = []
+                        for msg in messages_list:
+                            formatted_messages.append({
+                                "role": msg.get("role", ""),
+                                "content": msg.get("content", "")
+                            })
+                        
+                        # 在后台任务中生成标题（不阻塞响应）
+                        import asyncio
+                        async def update_title():
+                            try:
+                                # 使用run_in_executor在线程池中执行同步的生成函数
+                                import concurrent.futures
+                                loop = asyncio.get_event_loop()
+                                with concurrent.futures.ThreadPoolExecutor() as executor:
+                                    new_title = await loop.run_in_executor(
+                                        executor,
+                                        title_generator.generate_conversation_title,
+                                        formatted_messages
+                                    )
+                                
+                                await collection.update_one(
+                                    {"_id": conversation_id},
+                                    {"$set": {"title": new_title, "updated_at": beijing_now()}}
+                                )
+                                logger.info(f"自动更新对话标题成功 - 对话ID: {conversation_id}, 新标题: {new_title}")
+                            except Exception as e:
+                                logger.warning(f"自动更新对话标题失败: {str(e)}")
+                        
+                        # 在后台任务中执行，不阻塞当前请求
+                        asyncio.create_task(update_title())
+                    except Exception as e:
+                        logger.warning(f"启动标题生成任务失败: {str(e)}")
+        
+        logger.info(f"添加消息成功 - 对话ID: {conversation_id}, 角色: {message.role}")
+        
+        return {
+            "success": True,
+            "message": "消息已添加",
+            "timestamp": msg_dict["timestamp"].isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"添加消息失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"添加消息失败: {str(e)}"
+        )
+
+
+@router.put("/conversations/{conversation_id}")
+async def update_conversation(
+    conversation_id: str,
+    request: ConversationUpdate,
+):
+    """
+    更新对话（目前仅支持更新标题，匿名模式）
+    """
+    logger.info(f"更新对话请求 - 对话ID: {conversation_id}, 新标题: {request.title}")
+    try:
+        collection = mongodb.get_collection("conversations")
+        
+        # 检查对话是否存在
+        doc = await collection.find_one({"_id": conversation_id})
+        if not doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="对话不存在"
+            )
+        
+        # 构建更新字段
+        update_fields = {"updated_at": datetime.now(timezone.utc)}
+        if request.title is not None:
+            update_fields["title"] = request.title
+        
+        # 更新对话
+        result = await collection.update_one(
+            {"_id": conversation_id},
+            {"$set": update_fields}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="对话不存在"
+            )
+        
+        # 获取更新后的对话
+        updated_doc = await collection.find_one({"_id": conversation_id})
+        
+        logger.info(f"更新对话成功 - 对话ID: {conversation_id}")
+        
+        return {
+            "id": str(updated_doc["_id"]),
+            "title": updated_doc.get("title", "未命名对话"),
+            "created_at": updated_doc.get("created_at").isoformat() if updated_doc.get("created_at") else None,
+            "updated_at": updated_doc.get("updated_at").isoformat() if updated_doc.get("updated_at") else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新对话失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"更新对话失败: {str(e)}"
+        )
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+):
+    """
+    删除对话（匿名模式）
+    """
+    logger.info(f"删除对话请求 - 对话ID: {conversation_id}")
+    try:
+        collection = mongodb.get_collection("conversations")
+        
+        # 检查对话是否存在
+        doc = await collection.find_one({"_id": conversation_id})
+        if not doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="对话不存在"
+            )
+        
+        # 删除对话
+        result = await collection.delete_one({"_id": conversation_id})
+        
+        if result.deleted_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="对话不存在"
+            )
+        
+        logger.info(f"删除对话成功 - 对话ID: {conversation_id}")
+        
+        return {
+            "success": True,
+            "message": "对话已删除"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除对话失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"删除对话失败: {str(e)}"
+        )
+
+
+@router.put("/conversations/{conversation_id}/messages/{message_id}")
+async def update_message(
+    conversation_id: str,
+    message_id: str,
+    request: MessageUpdate,
+):
+    """
+    编辑用户消息（匿名模式）
+    只能编辑 role=\"user\" 的消息，不能编辑助手消息
+    """
+    logger.info(f"编辑消息请求 - 对话ID: {conversation_id}, 消息ID: {message_id}")
+    try:
+        collection = mongodb.get_collection("conversations")
+        
+        # 检查对话是否存在
+        doc = await collection.find_one({"_id": conversation_id})
+        if not doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="对话不存在"
+            )
+        
+        # 查找要编辑的消息
+        messages = doc.get("messages", [])
+        message_index = None
+        for i, msg in enumerate(messages):
+            if msg.get("message_id") == message_id:
+                message_index = i
+                break
+        
+        if message_index is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="消息不存在"
+            )
+        
+        # 只能编辑用户消息，不能编辑助手消息
+        if messages[message_index].get("role") != "user":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="只能编辑用户消息，不能编辑助手回复"
+            )
+        
+        # 更新消息内容
+        messages[message_index]["content"] = request.content
+        messages[message_index]["timestamp"] = beijing_now()  # 更新编辑时间
+        
+        # 保存更新后的消息列表
+        result = await collection.update_one(
+            {"_id": conversation_id},
+            {
+                "$set": {
+                    "messages": messages,
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="对话不存在"
+            )
+        
+        logger.info(f"编辑消息成功 - 对话ID: {conversation_id}, 消息ID: {message_id}")
+        
+        return {
+            "success": True,
+            "message": "消息已更新",
+            "message_id": message_id,
+            "timestamp": messages[message_index]["timestamp"].isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"编辑消息失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"编辑消息失败: {str(e)}"
+        )
+
+
+@router.post("/conversations/{conversation_id}/messages/{message_id}/regenerate")
+async def regenerate_response(
+    conversation_id: str,
+    message_id: str,
+):
+    """
+    重新生成回答（匿名模式）
+    删除指定用户消息之后的所有消息（包括该消息对应的助手回复），然后重新生成回答
+    """
+    logger.info(f"重新生成回答请求 - 对话ID: {conversation_id}, 消息ID: {message_id}")
+    try:
+        collection = mongodb.get_collection("conversations")
+        
+        # 检查对话是否存在
+        doc = await collection.find_one({"_id": conversation_id})
+        if not doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="对话不存在"
+            )
+        
+        # 查找要重新生成的消息
+        messages = doc.get("messages", [])
+        message_index = None
+        for i, msg in enumerate(messages):
+            if msg.get("message_id") == message_id:
+                message_index = i
+                break
+        
+        if message_index is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="消息不存在"
+            )
+        
+        # 只能重新生成用户消息对应的回答
+        if messages[message_index].get("role") != "user":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="只能重新生成用户消息对应的回答"
+            )
+        
+        # 删除该消息之后的所有消息（包括该消息对应的助手回复）
+        # 保留该消息及之前的所有消息
+        messages = messages[:message_index + 1]
+        
+        # 保存更新后的消息列表
+        result = await collection.update_one(
+            {"_id": conversation_id},
+            {
+                "$set": {
+                    "messages": messages,
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="对话不存在"
+            )
+        
+        logger.info(f"删除后续消息成功 - 对话ID: {conversation_id}, 消息ID: {message_id}, 保留消息数: {len(messages)}")
+        
+        return {
+            "success": True,
+            "message": "后续消息已删除，可以重新生成回答",
+            "message_id": message_id,
+            "remaining_messages": len(messages)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"重新生成回答失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"重新生成回答失败: {str(e)}"
+        )
+
+
+@router.post("/")
+async def chat(
+    chat_request: ChatRequest,
+    http_request: Request,
+) -> StreamingResponse:
+    """
+    常规对话（匿名模式）
+    使用 PhysicsAssistantAgent 处理，支持 RAG 检索增强与来源返回。
+    支持客户端断开连接检测，断开时自动停止流式输出
+    """
+    logger.info(f"对话请求 - 问题: {chat_request.query[:50]}...")
+    
+    try:
+        # 纯RAG系统：仅保留 PhysicsAssistantAgent（移除 network 模式）
+        logger.info("✓ 使用PhysicsAssistantAgent处理请求")
+        from agents.physics_assistant.physics_assistant_agent import PhysicsAssistantAgent
+        
+        agent = PhysicsAssistantAgent()
+        
+        # 获取对话历史（如果提供了conversation_id）
+        conversation_history = None
+        if chat_request.conversation_id:
+            try:
+                collection = mongodb.get_collection("conversations")
+                doc = await collection.find_one({"_id": chat_request.conversation_id})
+                if doc:
+                    messages = doc.get("messages", [])
+                    conversation_history = [
+                        {"role": msg.get("role"), "content": msg.get("content")}
+                        for msg in messages[-10:]  # 最近10轮对话
+                    ]
+            except Exception as e:
+                logger.warning(f"获取对话历史失败: {e}")
+        
+        # 构建上下文
+        context = {
+            "assistant_id": chat_request.assistant_id,
+            "knowledge_space_ids": chat_request.knowledge_space_ids,
+            "conversation_id": chat_request.conversation_id,
+            "enable_rag": chat_request.enable_rag,
+            "conversation_history": conversation_history
+        }
+        
+        # 流式生成响应（支持客户端断开连接检测）
+        async def generate_stream():
+            client_disconnected = False
+            yield_count = 0
+            
+            try:
+                full_response = ""
+                sources = []
+                recommended_resources = []
+                # 记录使用的Agent类型
+                agent_type = type(agent).__name__
+                logger.info(f"开始执行Agent任务 - Agent类型: {agent_type}")
+                
+                async for result in agent.execute(
+                    task=chat_request.query,
+                    context=context,
+                    stream=True
+                ):
+                    # 每 10 次 yield 检查一次连接状态（性能优化）
+                    yield_count += 1
+                    if yield_count % 10 == 0:
+                        if await http_request.is_disconnected():
+                            logger.info("检测到客户端断开连接")
+                            client_disconnected = True
+                            break
+                    
+                    try:
+                        if result.get("type") == "chunk":
+                            chunk = result.get("content", "")
+                            full_response += chunk
+                            # 发送文本chunk
+                            data = json.dumps({"content": chunk}, ensure_ascii=False)
+                            yield f"data: {data}\n\n"
+                        
+                        elif result.get("type") == "complete":
+                            sources = result.get("sources", [])
+                            recommended_resources = result.get("recommended_resources", [])
+                            data = json.dumps({
+                                "done": True,
+                                "sources": sources,
+                                "recommended_resources": recommended_resources
+                            }, ensure_ascii=False)
+                            yield f"data: {data}\n\n"
+                        
+                        elif result.get("type") == "error":
+                            error_data = json.dumps({"error": result.get("content", "")}, ensure_ascii=False)
+                            yield f"data: {error_data}\n\n"
+                    
+                    except (asyncio.CancelledError, BrokenPipeError, ConnectionResetError, OSError) as e:
+                        # 客户端断开连接（正常情况）
+                        logger.info(f"客户端断开连接，停止流式输出 - 错误类型: {type(e).__name__}")
+                        client_disconnected = True
+                        break
+                
+            except asyncio.CancelledError:
+                # 任务被取消（通常是客户端断开）
+                logger.info("流式生成任务被取消")
+                client_disconnected = True
+            except (BrokenPipeError, ConnectionResetError, OSError) as e:
+                # 连接错误（客户端断开）
+                logger.info(f"连接错误，客户端可能已断开 - 错误: {str(e)}")
+                client_disconnected = True
+            except Exception as e:
+                # 真正的系统错误
+                if not client_disconnected:
+                    logger.error(f"流式生成失败: {e}", exc_info=True)
+                    try:
+                        error_data = json.dumps({"error": str(e)}, ensure_ascii=False)
+                        yield f"data: {error_data}\n\n"
+                    except:
+                        pass  # 如果此时客户端已断开，忽略
+        
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    
+    except Exception as e:
+        logger.error(f"对话失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"对话失败: {str(e)}"
+        )
+
+
+@router.post("/deep-research")
+async def deep_research_chat(
+    research_request: DeepResearchRequest,
+    http_request: Request,
+) -> StreamingResponse:
+    """
+    深度研究模式（BETA）
+    
+    使用协调型Agent和多个专家Agent协作生成深度研究结果
+    返回HTML格式的响应
+    支持客户端断开连接检测，断开时自动停止流式输出
+    """
+    logger.info(f"深度研究模式请求 - 问题: {research_request.query[:50]}...")
+    
+    try:
+        from agents.workflow.agent_workflow import AgentWorkflow
+        from agents.builder.response_builder import ResponseBuilder
+        
+        # 初始化工作流和构建器
+        workflow = AgentWorkflow()
+        builder = ResponseBuilder()
+        
+        # 获取对话历史（如果提供了conversation_id）
+        conversation_history = None
+        if research_request.conversation_id:
+            try:
+                collection = mongodb.get_collection("conversations")
+                doc = await collection.find_one({"_id": research_request.conversation_id})
+                if doc:
+                    messages = doc.get("messages", [])
+                    conversation_history = [
+                        {"role": msg.get("role"), "content": msg.get("content")}
+                        for msg in messages[-5:]  # 最近5轮对话
+                    ]
+            except Exception as e:
+                logger.warning(f"获取对话历史失败: {e}")
+        
+        # 构建上下文
+        context = {
+            "assistant_id": research_request.assistant_id,
+            "conversation_id": research_request.conversation_id,
+            "conversation_history": conversation_history
+        }
+        
+        # 流式生成响应（支持客户端断开连接检测）
+        async def generate_stream():
+            client_disconnected = False
+            yield_count = 0
+            
+            try:
+                agent_results = []
+                planning_content = ""
+                
+                # 执行工作流
+                async for result in workflow.execute_workflow(
+                    query=research_request.query,
+                    context=context,
+                    enabled_agents=research_request.enabled_agents,
+                    stream=True
+                ):
+                    # 每 10 次 yield 检查一次连接状态（性能优化）
+                    yield_count += 1
+                    if yield_count % 10 == 0:
+                        if await http_request.is_disconnected():
+                            logger.info("检测到客户端断开连接")
+                            client_disconnected = True
+                            break
+                    
+                    try:
+                        if result.get("type") == "planning":
+                            planning_content = result.get("content", "")
+                            # 发送规划结果
+                            data = json.dumps({
+                                "type": "planning",
+                                "content": planning_content
+                            }, ensure_ascii=False)
+                            yield f"data: {data}\n\n"
+                        
+                        elif result.get("type") == "agent_result":
+                            # 发送单个Agent的结果
+                            agent_results.append({
+                                "agent_type": result.get("agent_type"),
+                                "content": result.get("content", ""),
+                                "sources": result.get("sources", []),
+                                "confidence": result.get("confidence", 0.5)
+                            })
+                            data = json.dumps({
+                                "type": "agent_result",
+                                "agent_type": result.get("agent_type"),
+                                "content": result.get("content", "")
+                            }, ensure_ascii=False)
+                            yield f"data: {data}\n\n"
+                        
+                        elif result.get("type") == "complete":
+                            # 所有Agent执行完成，构建HTML响应
+                            agent_results = result.get("agent_results", [])
+                            
+                            # 构建HTML
+                            html_response = builder.build_html_response(
+                                agent_results=agent_results,
+                                query=research_request.query,
+                                metadata={"planning": planning_content}
+                            )
+                            
+                            # 发送HTML响应
+                            data = json.dumps({
+                                "type": "html",
+                                "content": html_response
+                            }, ensure_ascii=False)
+                            yield f"data: {data}\n\n"
+                            
+                            # 发送完成标记
+                            yield f"data: {json.dumps({'done': True}, ensure_ascii=False)}\n\n"
+                        
+                        elif result.get("type") == "error":
+                            error_data = json.dumps({"error": result.get("content", "")}, ensure_ascii=False)
+                            yield f"data: {error_data}\n\n"
+                    
+                    except (asyncio.CancelledError, BrokenPipeError, ConnectionResetError, OSError) as e:
+                        # 客户端断开连接（正常情况）
+                        logger.info(f"客户端断开连接，停止流式输出 - 错误类型: {type(e).__name__}")
+                        client_disconnected = True
+                        break
+                
+            except asyncio.CancelledError:
+                # 任务被取消（通常是客户端断开）
+                logger.info("流式生成任务被取消")
+                client_disconnected = True
+            except (BrokenPipeError, ConnectionResetError, OSError) as e:
+                # 连接错误（客户端断开）
+                logger.info(f"连接错误，客户端可能已断开 - 错误: {str(e)}")
+                client_disconnected = True
+            except Exception as e:
+                # 真正的系统错误
+                if not client_disconnected:
+                    logger.error(f"深度研究模式流式生成失败: {e}", exc_info=True)
+                    try:
+                        error_data = json.dumps({"error": str(e)}, ensure_ascii=False)
+                        yield f"data: {error_data}\n\n"
+                    except:
+                        pass  # 如果此时客户端已断开，忽略
+        
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    
+    except Exception as e:
+        logger.error(f"深度研究模式失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"深度研究模式失败: {str(e)}"
+        )
+
+
+# 对话附件上传目录
+CONVERSATION_UPLOAD_DIR = os.getenv("CONVERSATION_UPLOAD_DIR", "./conversation_uploads")
+os.makedirs(CONVERSATION_UPLOAD_DIR, exist_ok=True)
+
+
+class ConversationAttachmentStatus(BaseModel):
+    """对话附件状态模型"""
+    file_id: str
+    conversation_id: str
+    filename: str
+    status: str  # uploading, processing, parsing, chunking, embedding, completed, failed
+    progress_percentage: Optional[int] = 0
+    current_stage: Optional[str] = None
+    stage_details: Optional[str] = None
+    message: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+async def update_attachment_status(
+    conversation_id: str,
+    file_id: str,
+    status: str,
+    progress_percentage: Optional[int] = None,
+    current_stage: Optional[str] = None,
+    stage_details: Optional[str] = None,
+    message: Optional[str] = None
+):
+    """更新附件处理状态"""
+    try:
+        collection = mongodb.get_collection("conversation_attachments")
+        update_data = {
+            "status": status,
+            "updated_at": beijing_now()
+        }
+        if progress_percentage is not None:
+            update_data["progress_percentage"] = progress_percentage
+        if current_stage is not None:
+            update_data["current_stage"] = current_stage
+        if stage_details is not None:
+            update_data["stage_details"] = stage_details
+        if message is not None:
+            update_data["message"] = message
+        
+        await collection.update_one(
+            {"conversation_id": conversation_id, "file_id": file_id},
+            {"$set": update_data},
+            upsert=True
+        )
+    except Exception as e:
+        logger.error(f"更新附件状态失败: {e}", exc_info=True)
+
+
+async def process_conversation_attachment(
+    file_path: str,
+    conversation_id: str,
+    file_id: str,
+    filename: str
+):
+    """后台处理对话附件：解析、分块、向量化"""
+    try:
+        # 更新状态：解析中
+        await update_attachment_status(
+            conversation_id, file_id,
+            status="parsing",
+            progress_percentage=10,
+            current_stage="解析文档",
+            stage_details="正在解析文件内容..."
+        )
+        
+        # 1. 解析文件
+        from parsers.parser_factory import ParserFactory
+        parser = ParserFactory.get_parser(file_path)
+        
+        if not parser:
+            raise Exception(f"不支持的文件类型: {file_path}")
+        
+        parse_result = parser.parse(file_path)
+        
+        # 解析器可能返回 "text" 或 "content" 字段
+        text_content = parse_result.get("text") or parse_result.get("content", "")
+        
+        if not text_content or not text_content.strip():
+            raise Exception("文件解析失败：未提取到内容")
+        
+        metadata = parse_result.get("metadata", {})
+        
+        # 更新状态：分块中
+        await update_attachment_status(
+            conversation_id, file_id,
+            status="chunking",
+            progress_percentage=40,
+            current_stage="分块处理",
+            stage_details="正在将文档内容分块..."
+        )
+        
+        # 2. 分块
+        from chunking.simple_chunker import SimpleChunker
+        chunker = SimpleChunker(chunk_size=500, chunk_overlap=50)
+        chunks = chunker.chunk(text_content)
+        
+        if not chunks:
+            raise Exception("分块失败：未生成任何块")
+        
+        # 更新状态：向量化中
+        await update_attachment_status(
+            conversation_id, file_id,
+            status="embedding",
+            progress_percentage=60,
+            current_stage="向量化",
+            stage_details=f"正在向量化 {len(chunks)} 个文档块..."
+        )
+        
+        # 3. 向量化
+        from embedding.embedding_service import embedding_service
+        vectors = []
+        payloads = []
+        
+        for i, chunk in enumerate(chunks):
+            vector = embedding_service.encode_single(chunk.get("text", ""))
+            vectors.append(vector)
+            
+            payload = {
+                "chunk_id": str(uuid.uuid4()),
+                "file_id": file_id,
+                "conversation_id": conversation_id,
+                "text": chunk.get("text", ""),
+                "chunk_index": i,
+                "filename": filename,
+                "metadata": metadata
+            }
+            payloads.append(payload)
+            
+            # 更新进度
+            if (i + 1) % 10 == 0 or (i + 1) == len(chunks):
+                progress = 60 + int(((i + 1) / len(chunks)) * 30)
+                await update_attachment_status(
+                    conversation_id, file_id,
+                    status="embedding",
+                    progress_percentage=progress,
+                    current_stage="向量化",
+                    stage_details=f"已向量化 {i + 1}/{len(chunks)} 个文档块"
+                )
+        
+        # 4. 存储到专用的 Qdrant collection
+        collection_name = f"conversation_{conversation_id}"
+        from database.qdrant_client import get_qdrant_client
+        qdrant = get_qdrant_client(collection_name)
+        
+        # 创建 collection（如果不存在）
+        vector_size = len(vectors[0]) if vectors else 768
+        qdrant.create_collection(vector_size=vector_size)
+        
+        # 插入向量
+        qdrant.insert_vectors(vectors=vectors, payloads=payloads)
+        
+        # 更新状态：已完成
+        completion_message = f"文件处理完成！成功解析并向量化了 {len(chunks)} 个文档块，已存储到对话专用向量空间。"
+        await update_attachment_status(
+            conversation_id, file_id,
+            status="completed",
+            progress_percentage=100,
+            current_stage="完成",
+            stage_details=f"成功处理 {len(chunks)} 个文档块，已向量化并存储",
+            message=completion_message
+        )
+        
+        logger.info(f"对话附件处理完成 - 对话ID: {conversation_id}, 文件ID: {file_id}, 块数: {len(chunks)}")
+        
+    except Exception as e:
+        logger.error(f"对话附件处理失败: {e}", exc_info=True)
+        await update_attachment_status(
+            conversation_id, file_id,
+            status="failed",
+            progress_percentage=0,
+            current_stage="失败",
+            stage_details=str(e),
+            message=f"处理失败: {str(e)}"
+        )
+        raise
+
+
+@router.post("/conversation-attachment")
+async def upload_conversation_attachment(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    conversation_id: str = Form(...),
+    knowledge_space_id: str = Form(...),
+):
+    """
+    上传对话附件
+    
+    对话框附件上传（与知识库上传共通）：
+    - 上传前必须选择目标知识空间
+    - 复用知识库入库的解析/分块/向量化流水线
+    """
+    if not knowledge_space_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="knowledge_space_id 参数不能为空"
+        )
+    if not conversation_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="conversation_id 参数不能为空"
+        )
+    
+    # 验证对话是否存在
+    collection = mongodb.get_collection("conversations")
+    conversation = await collection.find_one({"_id": conversation_id})
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="对话不存在"
+        )
+    
+    # 检查文件名
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="文件名不能为空"
+        )
+    
+    logger.info(f"对话附件上传请求 - 对话ID: {conversation_id}, 文件名: {file.filename}")
+    
+    # 检查文件类型
+    allowed_extensions = {".pdf", ".docx", ".doc", ".md", ".txt", ".markdown"}
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的文件类型: {file_ext}。支持的类型: PDF, Word (.doc/.docx), Markdown, TXT"
+        )
+    
+    # 生成文件ID
+    file_id = str(uuid.uuid4())
+    # 保存文件
+    file_path = os.path.join(CONVERSATION_UPLOAD_DIR, f"{conversation_id}_{file_id}{file_ext}")
+    
+    try:
+        # 读取文件内容
+        file_content = await file.read()
+        file_size = len(file_content)
+        
+        MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB
+        if file_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"文件大小不能超过200MB，当前文件大小: {file_size / (1024 * 1024):.2f}MB"
+            )
+        
+        if file_size == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="文件不能为空"
+            )
+        
+        # 保存文件
+        with open(file_path, "wb") as buffer:
+            buffer.write(file_content)
+        
+        # 先创建“文档”记录，复用知识库入库后台处理
+        import hashlib
+        file_hash = hashlib.sha256(file_content).hexdigest()
+
+        from database.mongodb import DocumentRepository, mongodb_client
+        if mongodb_client.db is None:
+            mongodb_client.connect()
+        doc_repo = DocumentRepository(mongodb_client)
+        document_id = doc_repo.create_document(
+            title=file.filename,
+            file_type=file_ext[1:],
+            file_path=file_path,
+            file_size=file_size,
+            file_hash=file_hash,
+            assistant_id=None,
+            knowledge_space_id=knowledge_space_id,
+        )
+
+        # 创建附件记录（关联 document_id）
+        attachment_collection = mongodb.get_collection("conversation_attachments")
+        attachment_doc = {
+            "file_id": file_id,
+            "conversation_id": conversation_id,
+            "document_id": document_id,
+            "knowledge_space_id": knowledge_space_id,
+            "filename": file.filename,
+            "file_path": file_path,
+            "file_size": file_size,
+            "file_type": file_ext[1:],
+            "status": "uploading",
+            "progress_percentage": 0,
+            "created_at": beijing_now(),
+            "updated_at": beijing_now()
+        }
+        await attachment_collection.insert_one(attachment_doc)
+        
+        # 更新状态：处理中
+        await update_attachment_status(
+            conversation_id, file_id,
+            status="processing",
+            progress_percentage=5,
+            current_stage="准备处理",
+            stage_details="文件上传完成，准备处理..."
+        )
+        
+        # 在后台异步处理文件（复用 documents 的后台入库）
+        from routers.documents import process_document_background
+        background_tasks.add_task(process_document_background, file_path, document_id, None, knowledge_space_id)
+        
+        logger.info(f"对话附件上传成功，已启动后台处理任务 - 对话ID: {conversation_id}, 文件ID: {file_id}")
+        
+        return {
+            "file_id": file_id,
+            "document_id": document_id,
+            "status": "processing",
+            "message": "文件上传成功，正在后台处理"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 清理文件
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except:
+                pass
+        
+        logger.error(f"对话附件上传失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"文件上传失败: {str(e)}"
+        )
+
+
+@router.get("/conversation-attachment/{conversation_id}/{file_id}/status", response_model=ConversationAttachmentStatus)
+async def get_conversation_attachment_status(
+    conversation_id: str,
+    file_id: str,
+):
+    """
+    获取对话附件的处理状态
+    
+    实时返回处理进度和状态（包括上传中、解析中、分块中、向量化中、已完成等阶段）
+    """
+    # 验证对话是否存在
+    collection = mongodb.get_collection("conversations")
+    conversation = await collection.find_one({"_id": conversation_id})
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="对话不存在"
+        )
+    
+    # 获取附件状态
+    attachment_collection = mongodb.get_collection("conversation_attachments")
+    attachment = await attachment_collection.find_one({
+        "conversation_id": conversation_id,
+        "file_id": file_id
+    })
+    
+    if not attachment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="附件不存在"
+        )
+    
+    # 将状态与进度以 documents 为准（与知识库上传一致）
+    doc_status = attachment.get("status", "unknown")
+    progress_percentage = attachment.get("progress_percentage", 0)
+    current_stage = attachment.get("current_stage")
+    stage_details = attachment.get("stage_details")
+    message = attachment.get("message")
+
+    document_id = attachment.get("document_id")
+    if document_id:
+        try:
+            from database.mongodb import DocumentRepository, mongodb_client
+            if mongodb_client.db is None:
+                mongodb_client.connect()
+            repo = DocumentRepository(mongodb_client)
+            doc = repo.get_document(document_id)
+            if doc:
+                doc_status = doc.get("status", doc_status)
+                progress_percentage = doc.get("progress_percentage", progress_percentage)
+                current_stage = doc.get("current_stage", current_stage)
+                stage_details = doc.get("stage_details", stage_details)
+                if doc_status == "completed":
+                    message = f"文件处理完成：已上传到目标知识空间，可用于增强检索。"
+        except Exception as e:
+            logger.warning(f"读取文档进度失败: {e}")
+
+    return ConversationAttachmentStatus(
+        file_id=attachment.get("file_id"),
+        conversation_id=attachment.get("conversation_id"),
+        filename=attachment.get("filename"),
+        status=doc_status,
+        progress_percentage=progress_percentage,
+        current_stage=current_stage,
+        stage_details=stage_details,
+        message=message,
+        created_at=attachment.get("created_at").isoformat() if attachment.get("created_at") else None,
+        updated_at=attachment.get("updated_at").isoformat() if attachment.get("updated_at") else None
+    )
+
+

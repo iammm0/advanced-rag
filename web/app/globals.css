@@ -1,0 +1,1183 @@
+@import "tailwindcss";
+
+/* 浅蓝色主题色定义 */
+:root {
+  /* 主题色 - 浅蓝色 */
+  --theme-primary: #3b82f6;
+  --theme-primary-hover: #2563eb;
+  --theme-primary-active: #1d4ed8;
+  --theme-primary-light: #60a5fa;
+  --theme-primary-lighter: #93c5fd;
+  --theme-primary-lightest: #dbeafe;
+  --theme-primary-dark: #1e40af;
+  
+  /* 背景色 */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+  --bg-card: #ffffff;
+  --bg-hover: #f3f4f6;
+  --bg-active: #e5e7eb;
+  
+  /* 文字颜色 */
+  --text-primary: #171717;
+  --text-secondary: #4b5563;
+  --text-tertiary: #6b7280;
+  --text-disabled: #9ca3af;
+  --text-inverse: #ffffff;
+  
+  /* 边框颜色 */
+  --border-primary: #e5e7eb;
+  --border-secondary: #d1d5db;
+  --border-focus: #3b82f6;
+  
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+/* 深色主题变量 */
+.dark {
+  /* 主题色 - 浅蓝色（深色模式下稍亮） */
+  --theme-primary: #60a5fa;
+  --theme-primary-hover: #3b82f6;
+  --theme-primary-active: #2563eb;
+  --theme-primary-light: #93c5fd;
+  --theme-primary-lighter: #bfdbfe;
+  --theme-primary-lightest: #1e3a8a;
+  --theme-primary-dark: #1e40af;
+  
+  /* 背景色 */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-card: #1e293b;
+  --bg-hover: #334155;
+  --bg-active: #475569;
+  
+  /* 文字颜色 */
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --text-disabled: #64748b;
+  --text-inverse: #0f172a;
+  
+  /* 边框颜色 */
+  --border-primary: #334155;
+  --border-secondary: #475569;
+  --border-focus: #60a5fa;
+  
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+}
+
+/* 浅色主题变量（显式定义，确保一致性） */
+.light {
+  /* 主题色 - 浅蓝色 */
+  --theme-primary: #3b82f6;
+  --theme-primary-hover: #2563eb;
+  --theme-primary-active: #1d4ed8;
+  --theme-primary-light: #60a5fa;
+  --theme-primary-lighter: #93c5fd;
+  --theme-primary-lightest: #dbeafe;
+  --theme-primary-dark: #1e40af;
+  
+  /* 背景色 */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+  --bg-card: #ffffff;
+  --bg-hover: #f3f4f6;
+  --bg-active: #e5e7eb;
+  
+  /* 文字颜色 */
+  --text-primary: #171717;
+  --text-secondary: #4b5563;
+  --text-tertiary: #6b7280;
+  --text-disabled: #9ca3af;
+  --text-inverse: #ffffff;
+  
+  /* 边框颜色 */
+  --border-primary: #e5e7eb;
+  --border-secondary: #d1d5db;
+  --border-focus: #3b82f6;
+  
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+@theme inline {
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: Arial, Helvetica, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* 代码高亮样式 */
+.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  font-size: 0.9em;
+  line-height: 1.6;
+}
+
+/* 代码块容器样式 */
+pre {
+  position: relative;
+  margin: 0;
+}
+
+pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* 代码块滚动条样式 */
+pre::-webkit-scrollbar {
+  height: 8px;
+}
+
+pre::-webkit-scrollbar-track {
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+pre::-webkit-scrollbar-thumb {
+  background: var(--text-tertiary);
+  border-radius: 4px;
+}
+
+pre::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #6a9955;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name,
+.hljs-tag {
+  color: #569cd6;
+}
+
+.hljs-string,
+.hljs-title,
+.hljs-section,
+.hljs-attribute,
+.hljs-literal,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-addition {
+  color: #ce9178;
+}
+
+.hljs-deletion,
+.hljs-selector-attr,
+.hljs-selector-pseudo,
+.hljs-meta {
+  color: #2b91af;
+}
+
+.hljs-doctag {
+  color: #808080;
+}
+
+.hljs-attr {
+  color: #fdd700;
+}
+
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link {
+  color: #b5cea8;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: bold;
+}
+
+/* 对话框动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes zoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 聊天消息动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* 聊天气泡优化 */
+.chat-bubble {
+  position: relative;
+}
+
+.chat-bubble::before {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+/* 用户消息气泡尾巴 */
+.chat-bubble-user::before {
+  right: -8px;
+  bottom: 0;
+  border-width: 0 0 12px 12px;
+  border-color: transparent transparent var(--theme-primary) transparent;
+}
+
+/* 助手消息气泡尾巴 */
+.chat-bubble-assistant::before {
+  left: -8px;
+  bottom: 0;
+  border-width: 0 12px 12px 0;
+  border-color: transparent var(--bg-card) transparent transparent;
+}
+
+/* 物理学内容专用样式 */
+.physics-content {
+  line-height: 1.8;
+}
+
+/* 公式推导步骤样式 */
+.derivation-step {
+  position: relative;
+  padding: 1rem 1.5rem;
+  margin: 1.5rem 0;
+  background: var(--bg-secondary);
+  border-left: 4px solid var(--theme-primary);
+  border-radius: 0 8px 8px 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.dark .derivation-step {
+  background: var(--bg-tertiary);
+}
+
+.derivation-step::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(to bottom, var(--theme-primary), var(--theme-primary-light));
+  border-radius: 2px 0 0 2px;
+}
+
+/* 数学公式显示优化 - MathJax */
+.physics-content .MathJax_Display {
+  margin: 1.5em auto;
+  padding: 1em 1.5em;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border-left: 4px solid var(--theme-primary);
+  overflow-x: auto;
+  box-shadow: var(--shadow-sm);
+}
+
+.dark .physics-content .MathJax_Display {
+  background: var(--bg-tertiary);
+}
+
+.physics-content .MathJax:not(.MathJax_Display) {
+  background: var(--bg-tertiary);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  margin: 0 0.2em;
+  font-size: 1.05em;
+}
+
+.dark .physics-content .MathJax:not(.MathJax_Display) {
+  background: var(--bg-secondary);
+}
+
+/* 深色模式下公式颜色优化 */
+.dark .MathJax,
+.dark .MathJax * {
+  color: #e2e8f0 !important;
+}
+
+.dark .MathJax_Display {
+  color: #e2e8f0 !important;
+}
+
+.dark .MathJax_Display * {
+  color: #e2e8f0 !important;
+}
+
+/* KaTeX 深色模式优化 */
+.dark .katex {
+  color: #e2e8f0 !important;
+}
+
+.dark .katex * {
+  color: #e2e8f0 !important;
+}
+
+.dark .katex-display {
+  color: #e2e8f0 !important;
+}
+
+.dark .katex-display * {
+  color: #e2e8f0 !important;
+}
+
+/* 确保公式在深色背景下清晰可见 */
+.dark .MathJax_SVG,
+.dark .MathJax_SVG * {
+  fill: #e2e8f0 !important;
+  stroke: #e2e8f0 !important;
+}
+
+.dark .katex .mord,
+.dark .katex .mop,
+.dark .katex .mbin,
+.dark .katex .mrel,
+.dark .katex .mopen,
+.dark .katex .mclose,
+.dark .katex .mpunct,
+.dark .katex .minner,
+.dark .katex .mord.mrel,
+.dark .katex .mord.mbin {
+  color: #e2e8f0 !important;
+}
+
+/* 公式容器背景优化 */
+.dark .MathJax_Display {
+  background: rgba(30, 41, 59, 0.8) !important;
+  border-left-color: #60a5fa !important;
+}
+
+.dark .katex-display {
+  background: rgba(30, 41, 59, 0.8) !important;
+  padding: 1em 1.5em;
+  border-radius: 8px;
+  border-left: 4px solid #60a5fa;
+  margin: 1.5em auto;
+}
+
+/* 层次列表优化 */
+.physics-content ul,
+.physics-content ol {
+  margin: 1em 0;
+}
+
+.physics-content ul ul,
+.physics-content ol ol,
+.physics-content ul ol,
+.physics-content ol ul {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  padding-left: 1.5em;
+}
+
+/* 逻辑推理步骤样式 */
+.logical-step {
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  background: var(--bg-secondary);
+  border-left: 3px solid #10b981;
+  border-radius: 0 4px 4px 0;
+}
+
+.dark .logical-step {
+  background: var(--bg-tertiary);
+}
+
+.logical-step::before {
+  content: '→';
+  color: #10b981;
+  font-weight: bold;
+  margin-right: 0.5rem;
+}
+
+/* 物理量标记样式 */
+.physical-quantity {
+  font-family: 'Times New Roman', serif;
+  font-style: italic;
+  color: var(--theme-primary-dark);
+  font-weight: 500;
+}
+
+.dark .physical-quantity {
+  color: var(--theme-primary-light);
+}
+
+/* 公式编号样式 */
+.equation-number {
+  float: right;
+  color: var(--text-tertiary);
+  font-size: 0.9em;
+  margin-left: 1em;
+}
+
+/* 通知下拉菜单样式 */
+.notification-dropdown {
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 通知项未读样式 */
+.notification-unread {
+  position: relative;
+}
+
+.notification-unread::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--theme-primary);
+  border-radius: 0 2px 2px 0;
+}
+
+/* 思考中的圆点动画 */
+@keyframes thinking-dot {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
+}
+
+.thinking-dot {
+  animation: thinking-dot 1.4s ease-in-out infinite;
+}
+
+/* 文档列表表格滑动样式 */
+.document-table-container {
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-tertiary) var(--bg-secondary);
+  -webkit-overflow-scrolling: touch;
+}
+
+.document-table-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.document-table-container::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+.document-table-container::-webkit-scrollbar-thumb {
+  background: var(--text-tertiary);
+  border-radius: 4px;
+}
+
+.document-table-container::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* 全局滚动条样式 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-tertiary);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* 平滑过渡 */
+* {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* 模态框动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes zoomIn95 {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.zoom-in-95 {
+  animation: zoomIn95 0.2s ease-out;
+}
+
+.duration-200 {
+  animation-duration: 200ms;
+}
+
+/* 资源卡片流畅浮动动画 */
+.resource-card {
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+              border-color 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform, box-shadow;
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.resource-card:hover {
+  transform: translateY(-8px) scale(1.01);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+}
+
+.dark .resource-card:hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+}
+
+/* Bilibili 官方颜色 */
+:root {
+  --bilibili-color: #FB7299;
+}
+
+.dark {
+  --bilibili-color: #FF6699;
+}
+
+.bg-bilibili {
+  background-color: var(--bilibili-color);
+}
+
+.text-bilibili {
+  color: var(--bilibili-color);
+}
+
+.border-bilibili {
+  border-color: var(--bilibili-color);
+}
+
+/* 移动端安全区域适配 */
+.safe-area-inset {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* 移动端滚动优化 */
+@media (max-width: 640px) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* 优化移动端滚动性能 */
+  .overflow-y-auto,
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* 隐藏滚动条但保持滚动功能 */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Preview 版本登录页面动画 */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes glow {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-glow {
+  animation: glow 3s ease-in-out infinite;
+}
+
+/* 深度研究动画 */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s ease-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.3s ease-out;
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+/* 里程碑式UI动画 */
+@keyframes milestone-appear {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes milestone-connect-horizontal {
+  from {
+    width: 0;
+    opacity: 0;
+  }
+  to {
+    width: 100%;
+    opacity: 1;
+  }
+}
+
+@keyframes milestone-connect-vertical {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: 100%;
+    opacity: 1;
+  }
+}
+
+@keyframes milestone-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.9;
+  }
+}
+
+@keyframes timeline-expand {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes card-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes shimmer-line {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-milestone-appear {
+  animation: milestone-appear 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-milestone-connect-h {
+  animation: milestone-connect-horizontal 0.8s ease-out forwards;
+}
+
+.animate-milestone-connect-v {
+  animation: milestone-connect-vertical 0.8s ease-out forwards;
+}
+
+.animate-milestone-pulse {
+  animation: milestone-pulse 2s ease-in-out infinite;
+}
+
+.animate-timeline-expand {
+  animation: timeline-expand 0.5s ease-out forwards;
+}
+
+.animate-card-float {
+  animation: card-float 3s ease-in-out infinite;
+}
+
+/* 里程碑节点样式 */
+.milestone-node {
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform, box-shadow;
+}
+
+.milestone-node:hover {
+  transform: translateY(-4px) scale(1.02);
+}
+
+.milestone-node.active {
+  animation: milestone-pulse 2s ease-in-out infinite;
+}
+
+.milestone-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--theme-primary), var(--theme-primary-light));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.milestone-icon:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+}
+
+@media (max-width: 640px) {
+  .milestone-icon {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+.milestone-card {
+  background: var(--bg-card);
+  border: 2px solid var(--theme-primary-lightest);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow-md);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.milestone-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--theme-primary), var(--theme-primary-light));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.5s ease;
+}
+
+.milestone-card:hover::before {
+  transform: scaleX(1);
+}
+
+.milestone-card:hover {
+  border-color: var(--theme-primary);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+.milestone-connector {
+  background: linear-gradient(
+    to bottom,
+    var(--border-primary),
+    var(--theme-primary-lightest),
+    var(--border-primary)
+  );
+  position: relative;
+  overflow: hidden;
+}
+
+.milestone-connector::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--theme-primary-lightest),
+    transparent
+  );
+  animation: shimmer-line 2s infinite;
+}
+
+.milestone-connector-horizontal {
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(
+    to right,
+    var(--border-primary),
+    var(--theme-primary-lightest),
+    var(--border-primary)
+  );
+}
+
+.milestone-connector-vertical {
+  width: 2px;
+  height: 100%;
+  background: linear-gradient(
+    to bottom,
+    var(--border-primary),
+    var(--theme-primary-lightest),
+    var(--border-primary)
+  );
+}
+
+/* 编辑模式动画 */
+@keyframes edit-mode-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    max-height: 500px;
+  }
+}
+
+.edit-mode-enter {
+  animation: edit-mode-in 0.3s ease-out forwards;
+}
+
+/* 关系节点特殊样式 */
+.relationship-node {
+  min-width: 180px;
+  flex-shrink: 0;
+}
+
+@media (min-width: 640px) {
+  .relationship-node {
+    min-width: 200px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .relationship-node {
+    min-width: 220px;
+  }
+}
+
+.relationship-node .milestone-card {
+  cursor: pointer;
+}
+
+.relationship-node:hover .milestone-card {
+  transform: translateY(-6px) scale(1.02);
+}
+
+@media (max-width: 640px) {
+  .relationship-node:hover .milestone-card {
+    transform: translateY(-4px) scale(1.01);
+  }
+}
+
+/* 时间线容器 */
+.timeline-container-vertical {
+  position: relative;
+  padding-left: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .timeline-container-vertical {
+    padding-left: 2rem;
+  }
+}
+
+.timeline-container-horizontal {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 1.5rem 0;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  gap: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .timeline-container-horizontal {
+    padding: 2rem 0;
+    gap: 1rem;
+  }
+}
+
+.timeline-container-horizontal::-webkit-scrollbar {
+  height: 8px;
+}
+
+.timeline-container-horizontal::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+.timeline-container-horizontal::-webkit-scrollbar-thumb {
+  background: var(--theme-primary-light);
+  border-radius: 4px;
+}
+
+.timeline-container-horizontal::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-primary);
+}
+
+/* 深色模式适配 */
+.dark .milestone-card {
+  border-color: var(--border-primary);
+  background: var(--bg-card);
+}
+
+.dark .milestone-card:hover {
+  border-color: var(--theme-primary);
+}
+
+.dark .milestone-connector {
+  background: linear-gradient(
+    to bottom,
+    var(--border-primary),
+    var(--theme-primary-dark),
+    var(--border-primary)
+  );
+}
+
+.dark .milestone-connector-horizontal {
+  background: linear-gradient(
+    to right,
+    var(--border-primary),
+    var(--theme-primary-dark),
+    var(--border-primary)
+  );
+}
+
+.dark .milestone-connector-vertical {
+  background: linear-gradient(
+    to bottom,
+    var(--border-primary),
+    var(--theme-primary-dark),
+    var(--border-primary)
+  );
+}
+
+/* ChatGPT 风格的生成式震动动画 */
+@keyframes typing-shake {
+  0%, 100% {
+    transform: translate(-50%, -50%) translate(0, 0);
+  }
+  10% {
+    transform: translate(-50%, -50%) translate(0.3px, -0.2px);
+  }
+  20% {
+    transform: translate(-50%, -50%) translate(-0.2px, 0.3px);
+  }
+  30% {
+    transform: translate(-50%, -50%) translate(0.2px, 0.2px);
+  }
+  40% {
+    transform: translate(-50%, -50%) translate(-0.3px, -0.1px);
+  }
+  50% {
+    transform: translate(-50%, -50%) translate(0.1px, 0.3px);
+  }
+  60% {
+    transform: translate(-50%, -50%) translate(-0.2px, -0.2px);
+  }
+  70% {
+    transform: translate(-50%, -50%) translate(0.3px, 0.1px);
+  }
+  80% {
+    transform: translate(-50%, -50%) translate(-0.1px, -0.3px);
+  }
+  90% {
+    transform: translate(-50%, -50%) translate(0.2px, 0.2px);
+  }
+}
+
+.typing-shake {
+  animation: typing-shake 0.15s ease-in-out infinite;
+}

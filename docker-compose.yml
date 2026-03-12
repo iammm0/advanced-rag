@@ -1,0 +1,49 @@
+services:
+  # MongoDB 数据库服务（本地开发）
+  mongodb:
+    image: mongo:7.0
+    container_name: advanced-rag-mongodb-dev
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: advanced_rag
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - advanced-rag-dev-network
+    healthcheck:
+      # mongosh 冷启动较慢，需足够 timeout；使用 --eval 比管道更快
+      test: ["CMD", "mongosh", "localhost:27017/test", "--quiet", "--eval", "db.runCommand('ping').ok"]
+      interval: 10s
+      timeout: 15s
+      retries: 5
+      start_period: 30s
+
+  # Qdrant 向量数据库服务（本地开发）
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: advanced-rag-qdrant-dev
+    restart: unless-stopped
+    ports:
+      - "6333:6333"  # REST API
+      - "6334:6334"  # gRPC API
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - advanced-rag-dev-network
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  qdrant_data:
+    driver: local
+
+networks:
+  advanced-rag-dev-network:
+    driver: bridge
