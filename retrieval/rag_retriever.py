@@ -12,9 +12,9 @@ from utils.logger import logger
 try:
     from sentence_transformers import CrossEncoder
     HAS_RERANKER = True
-except ImportError:
+except Exception as e:
     HAS_RERANKER = False
-    logger.warning("sentence-transformers 未安装，重排功能不可用")
+    logger.warning(f"sentence-transformers 加载失败，重排功能不可用: {e}")
 
 class RAGRetriever:
     """RAG检索器（混合检索：向量检索 + 关键词检索 + 图谱检索 + 重排）"""

@@ -10,19 +10,6 @@ sys.path.insert(0, root_dir)  # 使用 insert(0) 确保优先加载本地包
 print(f"Added to sys.path: {root_dir}")
 print(f"Current sys.path: {sys.path}")
 
-# Debug: check if file exists
-db_path = os.path.join(root_dir, "database", "neo4j_client.py")
-print(f"Checking if file exists: {db_path} -> {os.path.exists(db_path)}")
-print(f"Listing database dir: {os.listdir(os.path.join(root_dir, 'database'))}")
-
-try:
-    import database
-    print(f"Imported database: {database}")
-    import database.neo4j_client
-    print(f"Imported database.neo4j_client: {database.neo4j_client}")
-except Exception as e:
-    print(f"Error importing database.neo4j_client: {e}")
-
 print("DEBUG: Importing HybridChunker...")
 from chunking.hybrid_chunker import HybridChunker
 print("DEBUG: Importing knowledge_extraction_service...")

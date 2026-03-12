@@ -242,6 +242,13 @@ class EmbeddingService:
         # 使用 Ollama API
         embeddings = []
         for text in texts:
+            # 截断过长的文本，避免 Ollama 500 错误
+            # 假设 context window 为 8192 tokens，粗略按 4 chars/token 计算，保留前 30000 字符
+            # 更安全的做法是截断到 8000 字符左右
+            if len(text) > 8000:
+                logger.warning(f"文本过长 ({len(text)} 字符)，已截断至 8000 字符以避免 Ollama 错误")
+                text = text[:8000]
+                
             embedding = self._get_ollama_embedding(text)
             embeddings.append(embedding)
         return embeddings

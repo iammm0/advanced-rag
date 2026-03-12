@@ -809,7 +809,7 @@ async def upload_document(
             duplicate_status = duplicate_doc.get("status", "unknown")
             
             logger.warning(
-                f"检测到重复文档 - 用户ID: {current_user.id}, "
+                f"检测到重复文档 - 用户ID: anonymous, "
                 f"文件名: {file.filename}, "
                 f"已存在文档ID: {duplicate_id}, 标题: {duplicate_title}"
             )

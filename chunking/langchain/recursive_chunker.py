@@ -41,7 +41,15 @@ class RecursiveChunker(BaseChunker):
         """延迟初始化 LangChain 文本分割器"""
         if self._text_splitter is None:
             try:
-                from langchain.text_splitter import RecursiveCharacterTextSplitter
+                # 兼容旧版和新版 LangChain
+                try:
+                    from langchain_text_splitters import RecursiveCharacterTextSplitter
+                except ImportError:
+                    try:
+                        from langchain.text_splitter import RecursiveCharacterTextSplitter
+                    except ImportError:
+                        from langchain_core.text_splitters import RecursiveCharacterTextSplitter
+                
                 self._text_splitter = RecursiveCharacterTextSplitter(
                     chunk_size=self.chunk_size,
                     chunk_overlap=self.chunk_overlap,
@@ -51,7 +59,7 @@ class RecursiveChunker(BaseChunker):
                 logger.info("LangChain RecursiveCharacterTextSplitter 初始化成功")
             except ImportError:
                 logger.error("LangChain 未安装，无法使用递归分块器")
-                raise ImportError("请安装 LangChain: pip install langchain")
+                raise ImportError("请安装 LangChain: pip install langchain langchain-text-splitters")
             except Exception as e:
                 logger.error(f"初始化递归分块器失败: {e}", exc_info=True)
                 raise
