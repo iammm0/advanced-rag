@@ -10,8 +10,11 @@ from services.knowledge_extraction_service import knowledge_extraction_service
 from utils.logger import logger
 
 try:
-    from sentence_transformers import CrossEncoder
-    HAS_RERANKER = True
+    # 暂时禁用 sentence_transformers，因为它在当前环境会导致进程崩溃
+    # from sentence_transformers import CrossEncoder
+    # HAS_RERANKER = True
+    HAS_RERANKER = False
+    logger.warning("sentence-transformers 已暂时禁用以防止崩溃")
 except Exception as e:
     HAS_RERANKER = False
     logger.warning(f"sentence-transformers 加载失败，重排功能不可用: {e}")

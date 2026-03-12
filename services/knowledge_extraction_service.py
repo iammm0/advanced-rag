@@ -18,7 +18,7 @@ class KnowledgeExtractionService:
 请严格按照 JSON 格式返回结果，不要包含任何其他解释性文字。
 返回格式示例：
 [
-  {"head": "实体1", "head_type": "类型1", "relation": "关系", "tail": "实体2", "tail_type": "类型2"},
+  {{ "head": "实体1", "head_type": "类型1", "relation": "关系", "tail": "实体2", "tail_type": "类型2" }},
   ...
 ]
 
@@ -67,26 +67,38 @@ class KnowledgeExtractionService:
 
     def _parse_json(self, content: str) -> List[Dict[str, Any]]:
         """解析 LLM 返回的 JSON 字符串"""
+        parsed = None
         try:
             # 尝试直接解析
-            return json.loads(content)
+            parsed = json.loads(content)
         except json.JSONDecodeError:
             # 尝试从 markdown 代码块中提取
             match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
             if match:
                 try:
-                    return json.loads(match.group(1))
+                    parsed = json.loads(match.group(1))
                 except:
                     pass
+            
+        if parsed is None:
             # 尝试修复常见的 JSON 错误 (简单的)
             try:
                 # 有时候模型返回的不是 list 而是单个 object
                 if content.strip().startswith("{"):
-                    return [json.loads(content)]
+                    parsed = json.loads(content)
             except:
                 pass
-            
+        
+        if parsed is None:
             logger.warning(f"无法解析 JSON: {content[:100]}...")
+            return []
+            
+        if isinstance(parsed, dict):
+            return [parsed]
+        elif isinstance(parsed, list):
+            return parsed
+        else:
+            logger.warning(f"JSON 解析结果不是列表或字典: {type(parsed)}")
             return []
 
     async def extract_entities(self, query: str) -> List[str]:

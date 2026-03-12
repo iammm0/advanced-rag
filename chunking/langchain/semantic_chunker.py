@@ -55,9 +55,7 @@ class SemanticChunker(BaseChunker):
                 
                 self._semantic_chunker = LangChainSemanticChunker(
                     embeddings=embedding_function,
-                    breakpoint_threshold_amount=self.breakpoint_threshold_amount,
-                    chunk_size=self.chunk_size,
-                    chunk_overlap=self.chunk_overlap
+                    breakpoint_threshold_amount=self.breakpoint_threshold_amount
                 )
                 logger.info("LangChain SemanticChunker 初始化成功")
             except ImportError:
@@ -68,9 +66,7 @@ class SemanticChunker(BaseChunker):
                     
                     self._semantic_chunker = LangChainSemanticChunker(
                         embeddings=embedding_function,
-                        breakpoint_threshold_amount=self.breakpoint_threshold_amount,
-                        chunk_size=self.chunk_size,
-                        chunk_overlap=self.chunk_overlap
+                        breakpoint_threshold_amount=self.breakpoint_threshold_amount
                     )
                     logger.info("LangChain SemanticChunker 初始化成功（使用 langchain）")
                 except ImportError:
