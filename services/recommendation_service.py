@@ -152,13 +152,13 @@ class RecommendationService:
         """
         try:
             # 获取助手对应的集合名称
-            collection_name = "sensor_knowledge"  # 默认集合
+            collection_name = "advanced_rag_knowledge"  # 默认集合
             if assistant_id:
                 try:
                     assistant_collection = mongodb.get_collection("course_assistants")
                     assistant_doc = await assistant_collection.find_one({"_id": assistant_id})
                     if assistant_doc:
-                        collection_name = assistant_doc.get("collection_name", "sensor_knowledge")
+                        collection_name = assistant_doc.get("collection_name", "advanced_rag_knowledge")
                 except Exception as e:
                     logger.warning(f"获取助手集合名称失败: {str(e)}")
 

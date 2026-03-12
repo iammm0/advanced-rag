@@ -470,12 +470,12 @@ class AITools:
                         assistant_collection = mongodb.get_collection("course_assistants")
                         assistant_doc = await assistant_collection.find_one({"_id": assistant_id})
                         if assistant_doc:
-                            collection_name = assistant_doc.get("collection_name", "sensor_knowledge")
+                            collection_name = assistant_doc.get("collection_name", "advanced_rag_knowledge")
                             qdrant = get_qdrant_client(collection_name)
                             total_vectors = qdrant.get_collection_info().get("points_count", 0)
                     else:
                         # 默认集合
-                        qdrant = get_qdrant_client("sensor_knowledge")
+                        qdrant = get_qdrant_client("advanced_rag_knowledge")
                         total_vectors = qdrant.get_collection_info().get("points_count", 0)
                 except Exception as e:
                     logger.warning(f"获取向量统计失败: {str(e)}")

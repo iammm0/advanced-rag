@@ -72,7 +72,7 @@ export default function ChatPage() {
   // 深度研究功能全局开关（由系统管理员控制）
   const [deepResearchFeatureEnabled, setDeepResearchFeatureEnabled] = useState<boolean>(true);
   
-  // 深度研究模式开关（默认关闭，BETA功能）
+  // 深度研究模式开关（默认关闭）
   const [deepResearchEnabled, setDeepResearchEnabled] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("deepResearchEnabled");
@@ -837,7 +837,7 @@ export default function ChatPage() {
       // 7. 根据模式选择调用不同的API - 开始生成回复
       setLoadingStep(4); // 步骤4: 生成回复
       
-      // 深度研究模式（BETA）
+      // 深度研究模式
       if (deepResearchEnabled && deepResearchFeatureEnabled) {
         // 每次启动深度研究模式时都显示提示
         setToast({
@@ -2565,7 +2565,7 @@ export default function ChatPage() {
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 px-3 sm:px-4 pb-2 pt-1">
                   {/* 左侧：模式切换按钮 */}
                   <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                    {/* 深度研究模式按钮（BETA） */}
+                  {/* 深度研究模式按钮 */}
                     {deepResearchFeatureEnabled && (
                       <button
                         onClick={() => {
@@ -2592,8 +2592,8 @@ export default function ChatPage() {
                         <span className="hidden sm:inline">深度研究</span>
                         <span className="sm:hidden">深度</span>
                         {deepResearchEnabled && (
-                          <span className="px-1 py-0.5 text-[9px] sm:text-[10px] font-semibold text-white bg-orange-500 rounded">
-                            BETA
+                          <span className="px-1 py-0.5 text-[9px] sm:text-[10px] font-semibold text-white bg-blue-500 rounded">
+                            深研
                           </span>
                         )}
                       </button>

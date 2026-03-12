@@ -29,7 +29,7 @@ download_dependencies.cmd
 下载完成后，即可正常构建Docker镜像：
 
 ```bash
-docker build -t sensor-api .
+docker build -t advanced-rag .
 ```
 
 ## 当前依赖

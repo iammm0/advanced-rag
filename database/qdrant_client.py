@@ -22,7 +22,7 @@ class QdrantVectorDB:
         self,
         url: Optional[str] = None,
         api_key: Optional[str] = None,
-        collection_name: str = "sensor_knowledge"
+        collection_name: str = "advanced_rag_knowledge"
     ):
         """
         初始化Qdrant客户端

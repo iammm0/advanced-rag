@@ -54,8 +54,8 @@ else:
 
 app = FastAPI(
     title="Advanced RAG API",
-    description="高级RAG系统：AI助手对话（含深度研究）与知识库检索/入库",
-    version="BETA-v0.8.5",
+    description="开源高级RAG系统：AI助手对话（含深度研究）与知识库检索/入库",
+    version="v0.8.5",
     lifespan=lifespan
 )
 
@@ -100,7 +100,7 @@ app.include_router(health.router, tags=["健康检查"])
 @app.get("/")
 async def root():
     """根路径"""
-    return {"message": "advanced-rag API 服务", "version": "BETA-v0.8.5"}
+    return {"message": "advanced-rag API 服务", "version": "v0.8.5"}
 
 
 # 健康检查端点已移至 routers/health.py

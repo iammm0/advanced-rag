@@ -72,7 +72,7 @@ class ChatRequest(BaseModel):
 
 
 class DeepResearchRequest(BaseModel):
-    """深度研究模式请求（BETA）"""
+    """深度研究模式请求"""
     query: str
     assistant_id: Optional[str] = None
     conversation_id: Optional[str] = None
@@ -736,7 +736,7 @@ async def deep_research_chat(
     http_request: Request,
 ) -> StreamingResponse:
     """
-    深度研究模式（BETA）
+    深度研究模式
     
     使用协调型Agent和多个专家Agent协作生成深度研究结果
     返回HTML格式的响应

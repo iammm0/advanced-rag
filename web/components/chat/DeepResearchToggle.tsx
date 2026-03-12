@@ -11,8 +11,6 @@ export default function DeepResearchToggle({
   enabled,
   onChange,
 }: DeepResearchToggleProps) {
-  const [isBeta, setIsBeta] = useState(true); // BETA状态
-
   useEffect(() => {
     // 从localStorage读取状态
     if (typeof window !== "undefined") {
@@ -42,11 +40,6 @@ export default function DeepResearchToggle({
         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
           深度研究模式
         </span>
-        {isBeta && (
-          <span className="px-2 py-0.5 text-xs font-semibold text-white bg-orange-500 rounded">
-            BETA
-          </span>
-        )}
       </label>
       {enabled && (
         <span className="text-xs text-gray-500 dark:text-gray-400">

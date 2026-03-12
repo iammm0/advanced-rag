@@ -37,10 +37,10 @@
 3. 确保MongoDB数据库连接正常
 4. 确保RAG服务可用（如果测试RAG功能）
 
-### 运行测试脚本
+### 运行测试脚本（后端）
 
 ```bash
-cd sensor-api
+cd advanced-rag
 python test_agent_workflow.py
 ```
 
@@ -91,10 +91,10 @@ curl -X POST http://localhost:8000/chat/deep-research \
 
 ### 3. 前端测试
 
-1. 启动前端服务：`cd sensor-web && npm run dev`
+1. 启动前端服务：`cd web && npm run dev`
 2. 打开浏览器访问聊天页面
 3. 测试常规对话模式
-4. 测试深度研究模式（BETA）
+4. 测试深度研究模式
 5. 验证流式输出的实时性
 6. 验证HTML渲染的正确性
 

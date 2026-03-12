@@ -81,7 +81,7 @@ async def health_check():
     
     return HealthStatus(
         status=overall_status,
-        version="BETA-v0.8.5",
+        version="v0.8.5",
         services=services_status,
         system=system_info
     )

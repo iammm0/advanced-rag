@@ -42,9 +42,6 @@ export default function Navbar() {
               className="flex items-center space-x-2 text-base sm:text-lg md:text-xl font-bold text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
             >
               <span>advanced-rag</span>
-              <span className="text-[10px] sm:text-xs font-semibold bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded">
-                BETA
-              </span>
             </Link>
           </div>
 

@@ -31,4 +31,4 @@ if (Test-Path $PaddleOCRDir) {
 
 Write-Host ""
 Write-Host "所有依赖下载完成！" -ForegroundColor Green
-Write-Host "Now you can run: docker build -t sensor-api ." -ForegroundColor Green
+Write-Host "Now you can run: docker build -t advanced-rag ." -ForegroundColor Green

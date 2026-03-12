@@ -1,6 +1,6 @@
 # advanced-rag - 高级RAG系统
 
-`advanced-rag` 是一个“纯粹的高级RAG系统”，基于 FastAPI + Next.js 构建，仅保留 **AI 助手对话（含深度研究/深度思考）** 与 **知识库检索/入库** 两大能力，所有 API **匿名访问**。
+`advanced-rag` 是一个“纯粹的开源高级RAG系统”，基于 FastAPI + Next.js 构建，仅保留 **AI 助手对话（含深度研究/深度思考）** 与 **知识库检索/入库** 两大能力，所有 API **匿名访问**。
 
 ## ✨ 功能特性
 
@@ -40,89 +40,21 @@
 - **服务层** (`services/`): 业务逻辑服务
 - **路由层** (`routers/`): API路由定义
 
-## 📁 项目结构
+## 📁 项目结构（简要）
 
 ```
-sensor-api/
-├── main.py                 # FastAPI应用入口
-├── requirements.txt        # Python依赖
-├── Dockerfile              # Docker构建文件
-├── docker-compose.yml      # Docker Compose配置
-│
-├── agents/                 # 代理系统
-│   ├── base/              # 基础代理类
-│   ├── coordinator/       # 协调器代理
-│   ├── experts/           # 专家代理（代码分析、概念解释等）
-│   ├── network/           # 网络代理
-│   ├── physics_assistant/ # 物理助手代理
-│   └── workflow/          # 工作流管理
-│
-├── routers/               # API路由
-│   ├── auth.py           # 认证路由
-│   ├── chat.py           # 聊天路由
-│   ├── documents.py      # 文档管理路由
-│   ├── assistants.py     # 助手管理路由
-│   ├── models.py         # 模型管理路由
-│   ├── resources.py      # 资源管理路由
-│   ├── users.py          # 用户管理路由
-│   ├── network.py        # 网络同步路由
-│   ├── emails.py         # 邮件路由
-│   └── health.py         # 健康检查路由
-│
-├── services/              # 服务层
-│   ├── rag_service.py    # RAG检索服务
-│   ├── ollama_service.py # Ollama模型服务
-│   ├── ai_tools.py       # AI工具服务
-│   ├── cache_service.py # 缓存服务
-│   ├── email_service.py  # 邮件服务
-│   ├── network_sync_service.py # 网络同步服务
-│   └── ...               # 其他服务
-│
-├── models/                # 数据模型
-│   ├── user.py           # 用户模型
-│   ├── course_assistant.py # 课程助手模型
-│   ├── resource.py       # 资源模型
-│   └── email.py          # 邮件模型
-│
-├── database/              # 数据库客户端
-│   ├── mongodb.py        # MongoDB客户端
-│   ├── qdrant_client.py  # Qdrant客户端
-│   └── neo4j_client.py   # Neo4j客户端
-│
-├── parsers/               # 文档解析器
-│   ├── pdf_parser.py     # PDF解析器
-│   ├── word_parser.py    # Word解析器
-│   ├── markdown_parser.py # Markdown解析器
-│   └── router/           # 解析路由
-│
-├── chunking/              # 文本分块
-│   ├── smart_chunker.py  # 智能分块器
-│   ├── langchain/        # LangChain分块器
-│   └── router/           # 分块路由
-│
-├── retrieval/             # 检索模块
-│   └── rag_retriever.py  # RAG检索器
-│
-├── embedding/             # 向量化
-│   └── embedding_service.py # 向量化服务
-│
-├── utils/                 # 工具函数
-│   ├── logger.py         # 日志工具
-│   ├── lifespan.py       # 应用生命周期
-│   ├── code_analyzer.py  # 代码分析工具
-│   ├── formula_analyzer.py # 公式分析工具
-│   └── ...               # 其他工具
-│
-├── middleware/            # 中间件
-│   ├── auth_middleware.py # 认证中间件
-│   └── logging_middleware.py # 日志中间件
-│
-├── scripts/               # 脚本工具
-│   ├── init_neo4j.py     # Neo4j初始化
-│   └── migrate_*.py      # 数据迁移脚本
-│
-└── vendor/                # 第三方依赖（PaddleOCR等）
-```
+advanced-rag/
+├── main.py            # FastAPI 应用入口
+├── agents/            # 多Agent协作框架
+├── routers/           # 核心API路由（聊天 / 文档 / 知识空间 / 检索 / 健康检查）
+├── database/          # MongoDB / Qdrant 等数据库客户端
+├── parsers/           # 文档解析器
+├── chunking/          # 文本分块
+├── embedding/         # 向量化服务
+├── utils/             # 通用工具与监控
+├── middleware/        # 日志等中间件
+├── web/               # Next.js 前端（聊天 + 知识空间）
+└── scripts/           # 辅助脚本与迁移工具
 
 ## 🚀 快速开始
 
@@ -191,7 +123,7 @@ API_PORT=8000
 
 # MongoDB配置
 MONGODB_URI=mongodb://localhost:27017
-MONGODB_DB_NAME=sensor_ai
+MONGODB_DB_NAME=advanced_rag
 
 # Qdrant配置
 QDRANT_URL=http://localhost:6333
@@ -218,7 +150,7 @@ UPLOAD_DIR=./uploads
 
 # 日志配置
 LOG_LEVEL=INFO
-LOG_FILE=./logs/sensor-api.log
+LOG_FILE=./logs/advanced-rag.log
 ```
 
 ### 启动服务
@@ -240,62 +172,18 @@ docker-compose up -d
 
 服务启动后，访问：
 - API文档: http://localhost:8000/docs
-- 健康检查: http://localhost:8000/api/health
+- 健康检查: http://localhost:8000/health
 
-## 📚 API接口文档
+## 📚 核心API接口（当前版本）
 
-### 认证接口
-- `POST /api/auth/register` - 用户注册
-- `POST /api/auth/login` - 用户登录
-- `GET /api/auth/me` - 获取当前用户信息
-- `POST /api/auth/refresh` - 刷新Token
-
-### 聊天接口
-- `POST /api/chat/conversations` - 创建对话
-- `GET /api/chat/conversations` - 获取对话列表
-- `GET /api/chat/conversations/{id}` - 获取对话详情
-- `POST /api/chat/conversations/{id}/messages` - 发送消息
-- `POST /api/chat/stream` - 流式聊天
-- `DELETE /api/chat/conversations/{id}` - 删除对话
-
-### 助手管理接口
-- `GET /api/assistants` - 获取助手列表
-- `POST /api/assistants` - 创建助手（仅管理员）
-- `PUT /api/assistants/{id}` - 更新助手（仅管理员）
-- `DELETE /api/assistants/{id}` - 删除助手（仅管理员）
-
-### 文档管理接口（需要管理员权限）
-- `POST /api/documents/upload` - 上传文档
-- `GET /api/documents/` - 获取文档列表
-- `GET /api/documents/{id}` - 获取文档详情
-- `DELETE /api/documents/{id}` - 删除文档
-- `POST /api/documents/{id}/reindex` - 重新索引文档
-
-### 资源管理接口
-- `POST /api/resources/upload` - 上传资源
-- `GET /api/resources/` - 获取资源列表
-- `GET /api/resources/{id}` - 获取资源详情
-- `DELETE /api/resources/{id}` - 删除资源
-
-### 用户管理接口（需要管理员权限）
-- `GET /api/users` - 获取用户列表
-- `GET /api/users/{id}` - 获取用户详情
-- `PUT /api/users/{id}` - 更新用户信息
-- `DELETE /api/users/{id}` - 删除用户
-
-### 网络同步接口
-- `POST /api/network/sync` - 同步网络节点
-- `GET /api/network/nodes` - 获取网络节点
-- `GET /api/network/graph` - 获取知识图谱
-
-### 邮件接口
-- `POST /api/emails/send` - 发送邮件
-- `GET /api/emails/` - 获取邮件列表
-
-### 健康检查
-- `GET /api/health` - 系统健康检查
-
-完整的API文档可在启动服务后访问 `/docs` 查看交互式文档。
+- `POST /api/chat` - 常规对话（流式SSE）
+- `POST /api/chat/deep-research` - 深度研究模式
+- `POST /api/chat/conversation-attachment` - 对话附件上传并入库
+- `GET /api/chat/conversation-attachment/{conversation_id}/{file_id}/status` - 对话附件处理状态
+- `POST /api/documents/upload` - 文档上传入库
+- `GET /api/documents` - 文档列表
+- `GET /api/knowledge-spaces` - 知识空间列表
+- `GET /health` - 健康检查
 
 ## 🐳 Docker 部署
 
@@ -307,16 +195,16 @@ docker-compose up -d
 
 下载完成后，进行Docker构建：
 ```bash
-docker build -t sensor-api .
+docker build -t advanced-rag .
 ```
 
 ### 运行容器
 ```bash
 docker run -d \
   -p 8000:8000 \
-  --name sensor-api \
+  --name advanced-rag \
   --env-file .env \
-  sensor-api
+  advanced-rag
 ```
 
 ### 使用 Docker Compose
