@@ -1,6 +1,12 @@
 # advanced-rag - 高级RAG系统
 
-`advanced-rag` 是一个“纯粹的开源高级RAG系统”，基于 FastAPI + Next.js 构建，仅保留 **AI 助手对话（含深度研究/深度思考）** 与 **知识库检索/入库** 两大能力，所有 API **匿名访问**。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688.svg)](https://fastapi.tiangolo.com/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Changelog](https://img.shields.io/badge/Changelog-Keep%20a%20Changelog-orange.svg)](CHANGELOG.md)
+
+`advanced-rag` 是一个"纯粹的开源高级RAG系统"，基于 FastAPI + Next.js 构建，仅保留 **AI 助手对话（含深度研究/深度思考）** 与 **知识库检索/入库** 两大能力，所有 API **匿名访问**。
 
 ## ✨ 功能特性
 
@@ -243,6 +249,9 @@ cat TESTING.md
 ## 📖 相关文档
 
 - [测试文档](TESTING.md) - 测试指南和示例
+- [变更日志](CHANGELOG.md) - 版本发布历史
+- [贡献指南](CONTRIBUTING.md) - 如何参与贡献
+- [行为准则](CODE_OF_CONDUCT.md) - 社区行为规范
 - [Redis配置](REDIS_CONFIG.md) - Redis缓存配置说明
 - [分块器文档](chunking/README.md) - 文本分块功能说明
 - [解析器文档](parsers/README.md) - 文档解析功能说明
@@ -259,7 +268,7 @@ cat TESTING.md
 
 ## 📝 许可证
 
-本项目采用 MIT 许可证。
+本项目采用 [MIT 许可证](LICENSE)，版权所有 © 2026 [iammm0](https://github.com/iammm0)。
 
 ## 🙏 致谢
 

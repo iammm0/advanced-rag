@@ -1,0 +1,35 @@
+# advanced-rag API - Python 依赖
+# PaddleOCR 需单独从 vendor 安装: pip install -e ./vendor/PaddleOCR
+
+# Web 框架
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# 数据库
+pymongo>=4.6.0
+motor>=3.3.0
+qdrant-client>=1.7.0
+
+# 环境与配置
+python-dotenv>=1.0.0
+
+# HTTP 与请求
+httpx>=0.26.0
+requests>=2.31.0
+
+# 文档解析
+PyPDF2>=3.0.0
+PyMuPDF>=1.23.0
+python-docx>=1.1.0
+chardet>=5.2.0
+markdown>=3.5.0
+unstructured>=0.12.0
+
+# 文本与分块
+jieba>=0.42.1
+langchain>=0.1.0
+langchain-experimental>=0.0.50
+
+# 其他
+pydantic>=2.0.0

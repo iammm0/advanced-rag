@@ -1,4 +1,6 @@
+# ======================
 # Python
+# ======================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,9 +21,29 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
 
+# 虚拟环境
+.env/
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# mypy / pyright 类型检查
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyright/
+
+# ======================
 # Node.js / Next.js
-/node_modules
+# ======================
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -40,49 +62,94 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# ======================
 # 环境变量文件
+# ======================
 .env
 .env.local
 .env.development
 .env.production
 .env.*.local
 
-# IDE
+# 保留示例模板（不忽略）
+!.env.example
+
+# ======================
+# IDE / 编辑器
+# ======================
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
 
+# ======================
 # 日志文件
+# ======================
 logs/
 *.log
 
-# 上传文件
+# ======================
+# 上传 / 用户数据
+# ======================
 uploads/
-*.pdf
-*.doc
-*.docx
-*.txt
+conversation_uploads/
+avatars/assistants/
+thumbnails/
+cover_images/
+resources/
 
+# ======================
 # 操作系统
+# ======================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V8
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# 测试
+# ======================
+# 测试 & 覆盖率
+# ======================
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
 
-# 临时文件
+# ======================
+# 临时 / 缓存文件
+# ======================
 *.tmp
 *.temp
 *.bak
 *.backup
+*.orig
+*.rej
+.cache/
 
-# 资源文件目录
-/resources/
-resources/
+# ======================
+# 第三方依赖缓存（vendor）
+# ======================
+vendor/
 
-# vercel
+# ======================
+# Docker
+# ======================
+.docker/
+
+# ======================
+# vercel / 部署
+# ======================
 .vercel
