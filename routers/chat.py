@@ -4,7 +4,7 @@ import os
 import uuid
 import asyncio
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, BackgroundTasks, Form, Request
 from fastapi.responses import StreamingResponse
@@ -69,6 +69,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     enable_rag: bool = True  # 是否启用RAG检索
     mode: str = "normal"  # 模式：normal（普通模式）或 network（网络检索模式）
+    generation_config: Optional[Dict[str, Any]] = None  # 模型配置：{"llm_model": "...", "embedding_model": "..."}
 
 
 class DeepResearchRequest(BaseModel):
@@ -77,6 +78,20 @@ class DeepResearchRequest(BaseModel):
     assistant_id: Optional[str] = None
     conversation_id: Optional[str] = None
     enabled_agents: Optional[List[str]] = None  # 启用的专家Agent列表
+    generation_config: Optional[Dict[str, Any]] = None  # 模型配置：{"llm_model": "...", "embedding_model": "...", "sub_agent_config": {...}}
+
+
+@router.get("/models")
+async def list_models():
+    """获取可用模型列表"""
+    try:
+        from services.ollama_service import OllamaService
+        service = OllamaService()
+        models = await service.list_models()
+        return {"models": models}
+    except Exception as e:
+        logger.error(f"获取模型列表失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/conversations")
@@ -614,7 +629,11 @@ async def chat(
         logger.info("✓ 使用PhysicsAssistantAgent处理请求")
         from agents.physics_assistant.physics_assistant_agent import PhysicsAssistantAgent
         
-        agent = PhysicsAssistantAgent()
+        model_name = None
+        if chat_request.generation_config:
+             model_name = chat_request.generation_config.get("llm_model")
+        
+        agent = PhysicsAssistantAgent(model_name=model_name)
         
         # 获取对话历史（如果提供了conversation_id）
         conversation_history = None
@@ -637,7 +656,8 @@ async def chat(
             "knowledge_space_ids": chat_request.knowledge_space_ids,
             "conversation_id": chat_request.conversation_id,
             "enable_rag": chat_request.enable_rag,
-            "conversation_history": conversation_history
+            "conversation_history": conversation_history,
+            "generation_config": chat_request.generation_config,
         }
         
         # 流式生成响应（支持客户端断开连接检测）
@@ -771,7 +791,8 @@ async def deep_research_chat(
         context = {
             "assistant_id": research_request.assistant_id,
             "conversation_id": research_request.conversation_id,
-            "conversation_history": conversation_history
+            "conversation_history": conversation_history,
+            "generation_config": research_request.generation_config,
         }
         
         # 流式生成响应（支持客户端断开连接检测）

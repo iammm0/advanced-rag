@@ -33,6 +33,20 @@ class OllamaService:
         self.timeout = float(os.getenv("OLLAMA_TIMEOUT", "600.0"))
         logger.info(f"Ollama服务初始化 - 地址: {self.base_url}, 模型: {self.model_name}, 超时: {self.timeout}秒")
     
+    async def list_models(self) -> List[Dict[str, Any]]:
+        """获取可用模型列表"""
+        try:
+            url = f"{self.base_url}/api/tags"
+            response = self.session.get(url, timeout=10.0)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("models", [])
+            logger.warning(f"获取模型列表失败: {response.status_code}")
+            return []
+        except Exception as e:
+            logger.error(f"获取模型列表失败: {e}")
+            return []
+
     async def generate(
         self,
         prompt: str,

@@ -66,24 +66,37 @@ class AgentWorkflow:
         self.expert_agents = {}  # 专家Agent实例缓存
         self._agent_configs_cache = {}  # Agent配置缓存
     
-    async def _init_coordinator(self):
+    async def _init_coordinator(self, generation_config: Optional[Dict[str, Any]] = None):
         """初始化协调型Agent（异步加载配置）"""
         if self.coordinator is None:
-            config = await get_agent_config("coordinator")
-            model_name = config.get("inference_model")
+            model_name = None
+            if generation_config:
+                model_name = generation_config.get("llm_model")
+            
+            if not model_name:
+                config = await get_agent_config("coordinator")
+                model_name = config.get("inference_model")
+            
             self.coordinator = CoordinatorAgent(model_name=model_name)
     
-    async def _get_expert_agent(self, agent_type: str):
+    async def _get_expert_agent(self, agent_type: str, generation_config: Optional[Dict[str, Any]] = None):
         """获取专家Agent实例（延迟初始化，异步加载配置）"""
         if agent_type not in self.expert_agents:
             agent_class = self.AGENT_MAP.get(agent_type)
             if agent_class:
-                # 从数据库加载配置
-                if agent_type not in self._agent_configs_cache:
-                    self._agent_configs_cache[agent_type] = await get_agent_config(agent_type)
+                model_name = None
+                if generation_config:
+                    # 可以在这里处理特定Agent的模型配置，目前统一使用llm_model
+                    model_name = generation_config.get("llm_model")
                 
-                config = self._agent_configs_cache[agent_type]
-                model_name = config.get("inference_model")
+                if not model_name:
+                    # 从数据库加载配置
+                    if agent_type not in self._agent_configs_cache:
+                        self._agent_configs_cache[agent_type] = await get_agent_config(agent_type)
+                    
+                    config = self._agent_configs_cache[agent_type]
+                    model_name = config.get("inference_model")
+                
                 self.expert_agents[agent_type] = agent_class(model_name=model_name)
             else:
                 logger.warning(f"未知的Agent类型: {agent_type}")
@@ -111,7 +124,8 @@ class AgentWorkflow:
         """
         try:
             # 0. 初始化协调型Agent（异步加载配置）
-            await self._init_coordinator()
+            generation_config = context.get("generation_config") if context else None
+            await self._init_coordinator(generation_config)
             
             # 1. 协调Agent规划任务
             logger.info(f"AgentWorkflow: 开始规划任务 - {query[:50]}...")
@@ -216,7 +230,7 @@ class AgentWorkflow:
                 
                 try:
                     # 获取Agent实例
-                    agent = await self._get_expert_agent(agent_type)
+                    agent = await self._get_expert_agent(agent_type, generation_config)
                     if not agent:
                         logger.warning(f"AgentWorkflow: {agent_type} 未找到，跳过")
                         if stream:

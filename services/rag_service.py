@@ -15,6 +15,7 @@ class RAGService:
         collection_name: Optional[str] = None,
         conversation_id: Optional[str] = None,
         knowledge_space_ids: Optional[list[str]] = None,
+        embedding_model: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         检索相关上下文（并行检索文档和资源）
@@ -25,6 +26,7 @@ class RAGService:
             assistant_id: 可选的助手ID（用于获取集合名称）
             collection_name: 可选的集合名称（如果提供则直接使用）
             conversation_id: 可选的对话ID（如果提供，会同时检索对话专用向量空间）
+            embedding_model: 可选的向量模型名称
         
         Returns:
             包含上下文、来源信息和推荐资源的字典
@@ -68,7 +70,7 @@ class RAGService:
         
         # 使用异步检索方法 (retrieve_async)
         doc_tasks = [
-            doc_retriever.retrieve_async(query, document_id, cn)
+            doc_retriever.retrieve_async(query, document_id, cn, embedding_model=embedding_model)
             for cn in collection_names
         ]
         

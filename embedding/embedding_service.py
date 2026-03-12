@@ -172,17 +172,19 @@ class EmbeddingService:
             logger.error(f"获取 Ollama 模型列表失败: {e}")
             return []
     
-    def _get_ollama_embedding(self, text: str, retry_count: int = 3) -> List[float]:
+    def _get_ollama_embedding(self, text: str, retry_count: int = 3, model_name: Optional[str] = None) -> List[float]:
         """使用 Ollama API 获取单个文本的嵌入向量"""
         import time
         last_exception = None
+        
+        target_model = model_name or self.ollama_model
         
         for attempt in range(retry_count):
             try:
                 response = self.session.post(
                     f"{self.ollama_base_url}/api/embeddings",
                     json={
-                        "model": self.ollama_model,
+                        "model": target_model,
                         "prompt": text
                     },
                     timeout=120.0  # 增加超时时间到120秒
@@ -225,13 +227,14 @@ class EmbeddingService:
         # 所有重试都失败
         raise Exception(f"Ollama 嵌入请求失败（已重试 {retry_count} 次）: {last_exception}")
     
-    def encode(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
+    def encode(self, texts: List[str], batch_size: int = 32, model_name: Optional[str] = None) -> List[List[float]]:
         """
         将文本列表编码为向量
         
         Args:
             texts: 文本列表
             batch_size: 批处理大小（保留参数以保持兼容性，但 Ollama 不使用）
+            model_name: 指定使用的模型名称（可选，如果提供则覆盖默认模型）
         
         Returns:
             向量列表
@@ -241,6 +244,8 @@ class EmbeddingService:
         
         # 使用 Ollama API
         embeddings = []
+        target_model = model_name or self.ollama_model
+        
         for text in texts:
             # 截断过长的文本，避免 Ollama 500 错误
             # 假设 context window 为 8192 tokens，粗略按 4 chars/token 计算，保留前 30000 字符
@@ -249,13 +254,13 @@ class EmbeddingService:
                 logger.warning(f"文本过长 ({len(text)} 字符)，已截断至 8000 字符以避免 Ollama 错误")
                 text = text[:8000]
                 
-            embedding = self._get_ollama_embedding(text)
+            embedding = self._get_ollama_embedding(text, model_name=target_model)
             embeddings.append(embedding)
         return embeddings
     
-    def encode_single(self, text: str) -> List[float]:
+    def encode_single(self, text: str, model_name: Optional[str] = None) -> List[float]:
         """编码单个文本"""
-        return self.encode([text])[0]
+        return self.encode([text], model_name=model_name)[0]
     
     @property
     def dimension(self) -> int:

@@ -143,7 +143,7 @@ export default function DeepResearchRenderer({
   }
 
   return (
-    <div className={`deep-research-renderer ${className}`}>
+    <div className={`deep-research-renderer space-y-6 ${className}`}>
       {processedResults.map((result, index) => {
         if (!result.content || result.content.trim() === "") {
           return null;
@@ -154,59 +154,22 @@ export default function DeepResearchRenderer({
         return (
           <div
             key={`${result.agent_type}-${index}`}
-            className="mb-8 pb-8 border-b border-gray-200/50 dark:border-gray-700/50 last:border-b-0 last:pb-0 last:mb-0 animate-fade-in-up relative group"
-            style={{ animationDelay: `${index * 0.1}s` }}
+            className="animate-fade-in"
           >
-            {/* 左侧装饰线 */}
-            <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 via-purple-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-full"></div>
-            
-            {/* Agent标题 - 增强视觉效果 */}
-            <div className="flex items-center gap-3 mb-4 relative">
-              <div className="flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 dark:from-blue-900/30 dark:via-purple-900/20 dark:to-pink-900/20 rounded-xl border-2 border-blue-200 dark:border-blue-800 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-[1.02] relative overflow-hidden">
-                {/* 背景光效 */}
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-400/10 via-purple-400/10 to-pink-400/10 animate-pulse"></div>
-                
-                {/* Agent图标 */}
-                <div className="relative z-10">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                    </svg>
-                  </div>
-                  {/* 图标光晕 */}
-                  <div className="absolute inset-0 rounded-lg bg-blue-400/30 animate-ping opacity-75"></div>
-                </div>
-                
-                {/* Agent名称 */}
-                <div className="relative z-10">
-                  <span className="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 dark:from-blue-400 dark:via-purple-400 dark:to-pink-400">
-                    {agentName}
-                  </span>
-                  <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                </div>
-                
-                {/* 完成标记（如果有） */}
-                <div className="ml-auto relative z-10">
-                  <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center shadow-md animate-scale-in">
-                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
+            {/* Agent标题 - 纯文本样式 */}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+                {agentName}
+              </span>
+              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700"></div>
             </div>
 
-            {/* Agent内容 - 增强视觉效果 */}
-            <div className="pl-4 relative">
-              {/* 内容区域装饰 */}
-              <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-gradient-to-b from-blue-200 via-purple-200 to-transparent dark:from-blue-800 dark:via-purple-800 opacity-50"></div>
-              
-              <div className="bg-white/50 dark:bg-gray-800/30 rounded-lg p-4 border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-300">
-                <FormattedMessage
-                  content={result.content}
-                  className="text-gray-800 dark:text-gray-100"
-                />
-              </div>
+            {/* Agent内容 */}
+            <div className="pl-0">
+              <FormattedMessage
+                content={result.content}
+                className="text-gray-800 dark:text-gray-100"
+              />
             </div>
           </div>
         );

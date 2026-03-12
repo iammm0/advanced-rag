@@ -74,6 +74,8 @@ class PhysicsAssistantAgent(BaseAgent):
         document_id = context.get("document_id") if context else None
         enable_rag = context.get("enable_rag", True) if context else True
         conversation_history = context.get("conversation_history") if context else None
+        generation_config = context.get("generation_config") if context else None
+        embedding_model = generation_config.get("embedding_model") if generation_config else None
         
         # 0. 智能选择模型（如果未固定模型）
         selected_model = self.fixed_model
@@ -105,6 +107,7 @@ class PhysicsAssistantAgent(BaseAgent):
                     document_id=document_id,
                     assistant_id=assistant_id,
                     knowledge_space_ids=knowledge_space_ids,
+                    embedding_model=embedding_model,
                 )
                 
                 rag_context = retrieval_result.get("context", "")

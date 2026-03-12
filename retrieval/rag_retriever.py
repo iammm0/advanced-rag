@@ -42,8 +42,9 @@ class RAGRetriever:
             try:
                 # 使用轻量级重排模型
                 # 可以选择 'BAAI/bge-reranker-base' 或其他模型
-                self.reranker = CrossEncoder('BAAI/bge-reranker-base', device='cpu') # 根据环境可选择 'cuda'
-                logger.info("重排模型加载成功: BAAI/bge-reranker-base")
+                # self.reranker = CrossEncoder('BAAI/bge-reranker-base', device='cpu') # 根据环境可选择 'cuda'
+                # logger.info("重排模型加载成功: BAAI/bge-reranker-base")
+                pass
             except Exception as e:
                 logger.warning(f"重排模型加载失败: {e}")
 
@@ -65,7 +66,7 @@ class RAGRetriever:
         except RuntimeError:
             return asyncio.run(self.retrieve_async(query, document_id, collection_name))
 
-    async def retrieve_async(self, query: str, document_id: Optional[str] = None, collection_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def retrieve_async(self, query: str, document_id: Optional[str] = None, collection_name: Optional[str] = None, embedding_model: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         异步检索相关文档块 (High-level RAG)
         
@@ -73,13 +74,14 @@ class RAGRetriever:
             query: 查询文本
             document_id: 可选的文档ID过滤
             collection_name: 可选的集合名称（用于多助手支持）
+            embedding_model: 可选的向量模型名称
         
         Returns:
             检索结果列表，包含文本、相似度分数、元数据等
         """
         # 1. 并行执行多种检索策略
         tasks = [
-            self._vector_search(query, document_id, collection_name),
+            self._vector_search(query, document_id, collection_name, embedding_model),
             self._keyword_search(query, document_id),
             self._graph_search(query, document_id)
         ]
@@ -105,11 +107,11 @@ class RAGRetriever:
         merged = self._merge_results(vector_results, keyword_results, [])
         return merged[:self.top_k]
 
-    async def _vector_search(self, query: str, document_id: Optional[str], collection_name: Optional[str]) -> List[Dict[str, Any]]:
+    async def _vector_search(self, query: str, document_id: Optional[str], collection_name: Optional[str], embedding_model: Optional[str] = None) -> List[Dict[str, Any]]:
         """向量检索"""
         try:
             # 向量化查询文本 (可能是同步的，但在 executor 中运行比较好，或者假设很快)
-            query_vector = embedding_service.encode_single(query)
+            query_vector = embedding_service.encode_single(query, model_name=embedding_model)
             
             filter_conditions = None
             if document_id:
