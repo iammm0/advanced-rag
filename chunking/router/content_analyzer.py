@@ -4,6 +4,7 @@ from chunking.langchain.recursive_chunker import RecursiveChunker
 from chunking.langchain.semantic_chunker import SemanticChunker
 from chunking.simple_chunker import SimpleChunker
 from chunking.smart_chunker import SmartChunker
+from chunking.hybrid_chunker import HybridChunker
 from utils.logger import logger
 
 
@@ -15,6 +16,7 @@ class ContentAnalyzer:
     CHUNKER_TYPE_SEMANTIC = "semantic"  # 语义分块器（需要保持语义连贯性）
     CHUNKER_TYPE_SMART = "smart"  # 智能分块器（包含公式、表格等）
     CHUNKER_TYPE_LEGACY = "legacy"  # 简单分块器（通用型）
+    CHUNKER_TYPE_HYBRID = "hybrid"  # 混合分块器（规则+语义）
     
     def __init__(self):
         """初始化内容分析器"""
@@ -22,6 +24,7 @@ class ContentAnalyzer:
         self.semantic_chunker = None
         self.smart_chunker = None
         self.legacy_chunker = None
+        self.hybrid_chunker = None
     
     def _get_recursive_chunker(self) -> RecursiveChunker:
         """获取 LangChain 递归分块器（延迟初始化）"""
@@ -55,6 +58,16 @@ class ContentAnalyzer:
         if self.legacy_chunker is None:
             self.legacy_chunker = SimpleChunker(chunk_size=500, chunk_overlap=50)
         return self.legacy_chunker
+
+    def _get_hybrid_chunker(self) -> HybridChunker:
+        """获取混合分块器（延迟初始化）"""
+        if self.hybrid_chunker is None:
+            self.hybrid_chunker = HybridChunker(
+                chunk_size=1000,
+                chunk_overlap=200,
+                semantic_threshold=0.5
+            )
+        return self.hybrid_chunker
     
     def _detect_highly_structured(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """
@@ -234,9 +247,8 @@ class ContentAnalyzer:
         
         路由策略（按优先级）：
         1. 高度结构化内容（代码、论文）-> 递归分块器
-        2. 包含公式或表格的文档 -> 智能分块器
-        3. 需要保持语义连贯性的长文档 -> 语义分块器
-        4. 其他文档 -> 简单分块器
+        2. 包含公式、表格或需要保持语义连贯性的长文档 -> 混合分块器 (升级版)
+        3. 其他文档 -> 简单分块器
         
         Args:
             text: 要分块的文本
@@ -255,17 +267,15 @@ class ContentAnalyzer:
         if self._detect_highly_structured(text, metadata):
             return self.CHUNKER_TYPE_RECURSIVE, self._get_recursive_chunker()
         
-        # 2. 检测包含公式或表格的文档 -> 智能分块器
-        # （智能分块器能保护公式和表格的完整性）
+        # 2. 检测包含公式或表格的文档 -> 混合分块器 (替代智能分块器)
         if self._detect_formulas_or_tables(text, metadata):
-            return self.CHUNKER_TYPE_SMART, self._get_smart_chunker()
+            logger.info("检测到公式或表格，使用混合分块器")
+            return self.CHUNKER_TYPE_HYBRID, self._get_hybrid_chunker()
         
-        # 3. 检测需要语义连贯性的内容 -> 语义分块器
-        # （长文档、报告、文章等需要保持上下文连贯性）
+        # 3. 检测需要语义连贯性的内容 -> 混合分块器 (替代语义分块器)
         if self._detect_semantic_coherence_required(text, metadata):
-            semantic_chunker = self._get_semantic_chunker()
-            if semantic_chunker:
-                return self.CHUNKER_TYPE_SEMANTIC, semantic_chunker
+            logger.info("检测到需要语义连贯性的内容，使用混合分块器")
+            return self.CHUNKER_TYPE_HYBRID, self._get_hybrid_chunker()
         
         # 4. 默认使用简单分块器（通用型，适合大多数场景）
         logger.info("使用简单分块器（通用型）")

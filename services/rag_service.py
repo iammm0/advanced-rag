@@ -65,8 +65,10 @@ class RAGService:
         # 文档检索任务（知识空间集合，可多集合并行）
         from retrieval.rag_retriever import RAGRetriever
         doc_retriever = RAGRetriever(top_k=100, score_threshold=0.7)
+        
+        # 使用异步检索方法 (retrieve_async)
         doc_tasks = [
-            loop.run_in_executor(None, doc_retriever.retrieve, query, document_id, cn)
+            doc_retriever.retrieve_async(query, document_id, cn)
             for cn in collection_names
         ]
         

@@ -1,0 +1,15 @@
+
+[
+  {
+    "question": "什么是 RAG?",
+    "answer": "RAG (Retrieval-Augmented Generation) 是一种结合检索系统和生成模型的技术，旨在通过检索外部知识库来增强生成模型的准确性和时效性。"
+  },
+  {
+    "question": "Neo4j 的作用是什么?",
+    "answer": "Neo4j 是一个图数据库，用于存储和查询复杂的实体关系网络，支持知识图谱的构建和关联检索。"
+  },
+  {
+    "question": "Qdrant 是什么?",
+    "answer": "Qdrant 是一个向量数据库，用于高效存储和检索高维向量，常用于语义搜索和推荐系统。"
+  }
+]

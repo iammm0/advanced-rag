@@ -10,6 +10,8 @@ python-multipart>=0.0.6
 pymongo>=4.6.0
 motor>=3.3.0
 qdrant-client>=1.7.0
+neo4j>=5.15.0
+sentence-transformers>=2.2.0
 
 # 环境与配置
 python-dotenv>=1.0.0

@@ -396,6 +396,61 @@ def process_document_background(
         else:
             logger.warning(f"分块结果为空 - 文档ID: {doc_id}, 原始文本长度: {len(text)}")
         
+        # 阶段2.5: 知识抽取与图谱构建 (High-level RAG)
+        try:
+            from services.knowledge_extraction_service import knowledge_extraction_service
+            import asyncio
+            
+            logger.info(f"开始知识图谱构建 - 文档ID: {doc_id}, 块数量: {len(chunks)}")
+            doc_repo.update_document_progress(doc_id, 30, "知识图谱构建", "正在抽取实体关系...")
+            
+            # 定义异步任务
+            async def build_kg_for_chunks():
+                tasks = []
+                # 限制并发数为 3，避免 Ollama 过载
+                sem = asyncio.Semaphore(3)
+                
+                async def processed_chunk(chunk, idx):
+                    async with sem:
+                        meta = chunk.get("metadata", {}).copy()
+                        meta["document_id"] = doc_id
+                        meta["chunk_index"] = idx
+                        # 仅对文本类型的块进行抽取
+                        if meta.get("content_type", "text") == "text":
+                             await knowledge_extraction_service.build_graph(chunk["text"], meta)
+                
+                for i, chunk in enumerate(chunks):
+                    tasks.append(processed_chunk(chunk, i))
+                
+                # 分批处理，避免任务队列过长
+                batch_size = 10
+                for i in range(0, len(tasks), batch_size):
+                    batch_tasks = tasks[i:i+batch_size]
+                    await asyncio.gather(*batch_tasks)
+                    # 更新进度
+                    progress = 30 + int(((i + len(batch_tasks)) / len(tasks)) * 5) # 30-35%
+                    doc_repo.update_document_progress(doc_id, progress, "知识图谱构建", f"已处理 {min(i + batch_size, len(tasks))}/{len(tasks)} 块")
+
+            # 运行异步任务
+            # 注意：如果当前已经在 loop 中，asyncio.run 会失败。
+            # 但 process_document_background 是在线程池中运行的，通常没有 loop。
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                     # 理论上不应该发生，因为是在线程池中
+                     logger.warning("在运行中的循环中检测到知识图谱构建，尝试使用 run_coroutine_threadsafe (可能不支持)")
+                else:
+                     loop.run_until_complete(build_kg_for_chunks())
+            except RuntimeError:
+                # 没有 loop
+                asyncio.run(build_kg_for_chunks())
+                
+            logger.info(f"知识图谱构建完成 - 文档ID: {doc_id}")
+            
+        except Exception as e:
+            logger.error(f"知识图谱构建失败 (非致命错误): {e}", exc_info=True)
+            # 不中断主流程
+
         # 阶段3 (35%): 分块完成，开始向量化
         doc_repo.update_document_progress(doc_id, 35, "向量化", f"共 {len(chunks)} 个文本块")
         
