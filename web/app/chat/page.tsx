@@ -844,12 +844,8 @@ export default function ChatPage() {
         const allAgentTypes = [
           "coordinator",
           "document_retrieval",
-          "formula_analysis",
-          "code_analysis",
           "concept_explanation",
-          "example_generation",
-          "exercise",
-          "scientific_coding",
+          "critic",
           "summary",
         ];
 
@@ -2160,12 +2156,8 @@ export default function ChatPage() {
                             <div className="max-h-32 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-2 space-y-1">
                               {[
                                 { id: "document_retrieval", name: "文档检索" },
-                                { id: "formula_analysis", name: "公式分析" },
-                                { id: "code_analysis", name: "代码分析" },
                                 { id: "concept_explanation", name: "概念解释" },
-                                { id: "example_generation", name: "举例说明" },
-                                { id: "exercise", name: "习题生成" },
-                                { id: "scientific_coding", name: "科学计算" },
+                                { id: "critic", name: "批判性分析" },
                                 { id: "summary", name: "总结归纳" },
                               ].map((agent) => (
                                 <label key={agent.id} className="flex items-center gap-2 text-xs">

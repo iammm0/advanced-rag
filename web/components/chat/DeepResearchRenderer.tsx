@@ -18,13 +18,9 @@ interface DeepResearchRendererProps {
 const agentTypeNames: Record<string, string> = {
   coordinator: "协调规划",
   document_retrieval: "文档检索",
-  formula_analysis: "公式分析",
-  code_analysis: "代码分析",
   concept_explanation: "概念解释",
-  example_generation: "示例生成",
   summary: "总结",
-  exercise: "练习",
-  scientific_coding: "科学编程",
+  critic: "批判性分析",
 };
 
 /**

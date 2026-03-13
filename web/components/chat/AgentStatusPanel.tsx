@@ -20,37 +20,25 @@ interface AgentStatusPanelProps {
 const agentTitles: Record<string, string> = {
   coordinator: "协调型Agent",
   document_retrieval: "文档检索专家",
-  formula_analysis: "公式分析专家",
-  code_analysis: "代码分析专家",
   concept_explanation: "概念解释专家",
-  example_generation: "示例生成专家",
   summary: "总结专家",
-  exercise: "习题专家",
-  scientific_coding: "科学计算编码专家",
+  critic: "批判性思维专家",
 };
 
 const agentDescriptions: Record<string, string> = {
   coordinator: "分析用户问题，规划研究任务，协调各Agent工作",
   document_retrieval: "从知识库中检索相关文档和资料",
-  formula_analysis: "分析数学和物理公式，解释公式含义",
-  code_analysis: "分析代码示例，解释代码逻辑",
   concept_explanation: "深入解释专业概念和理论",
-  example_generation: "生成实际应用示例和案例",
   summary: "总结和归纳各Agent的研究结果",
-  exercise: "生成习题和解题过程",
-  scientific_coding: "生成MATLAB/Python科学计算代码",
+  critic: "验证信息准确性，检查幻觉，提供批判性分析",
 };
 
 // Agent工作流程顺序（包含所有Agent）
 const agentWorkflowOrder = [
   "coordinator",
   "document_retrieval",
-  "formula_analysis",
-  "code_analysis",
   "concept_explanation",
-  "example_generation",
-  "exercise",
-  "scientific_coding",
+  "critic",
   "summary",
 ];
 

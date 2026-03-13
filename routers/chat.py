@@ -625,15 +625,15 @@ async def chat(
     logger.info(f"对话请求 - 问题: {chat_request.query[:50]}...")
     
     try:
-        # 纯RAG系统：仅保留 PhysicsAssistantAgent（移除 network 模式）
-        logger.info("✓ 使用PhysicsAssistantAgent处理请求")
-        from agents.physics_assistant.physics_assistant_agent import PhysicsAssistantAgent
+        # 纯RAG系统：使用 GeneralAssistantAgent 处理请求
+        logger.info("✓ 使用GeneralAssistantAgent处理请求")
+        from agents.general_assistant.general_assistant_agent import GeneralAssistantAgent
         
         model_name = None
         if chat_request.generation_config:
              model_name = chat_request.generation_config.get("llm_model")
         
-        agent = PhysicsAssistantAgent(model_name=model_name)
+        agent = GeneralAssistantAgent(model_name=model_name)
         
         # 获取对话历史（如果提供了conversation_id）
         conversation_history = None

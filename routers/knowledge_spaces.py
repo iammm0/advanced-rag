@@ -1,7 +1,7 @@
 """知识空间（Knowledge Space）路由
 
 说明：
-- 物理“助手”仅保留一个默认对话助手（PhysicsAssistantAgent）
+- 物理“助手”仅保留一个默认对话助手（GeneralAssistantAgent）
 - 原“助手列表/助手选择”在产品层面改为“知识空间选择”
 - 每个知识空间对应一个独立的向量集合（Qdrant collection_name）
 """

@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     try:
         await _connect_mongodb_with_retry()
         # 启动时数据修复/初始化：
-        # 1) 仅保留一个默认“物理助手”（course_assistants）——对话用
+        # 1) 仅保留一个默认“通用助手”（course_assistants）——对话用
         # 2) 初始化至少一个默认知识空间（knowledge_spaces）——入库/检索用
         try:
             from utils.timezone import beijing_now
@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
                 await assistants.insert_one(
                     {
                         "name": "默认助手",
-                        "description": "系统默认对话助手（PhysicsAssistantAgent）",
+                        "description": "系统默认对话助手（GeneralAssistantAgent）",
                         "system_prompt": "",
                         "collection_name": "default_knowledge",
                         "is_default": True,
@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
                 )
                 default_assistant = await assistants.find_one({"is_default": True})
 
-            # 删除非默认的“物理助手”（保留一个默认即可）
+            # 删除非默认的“通用助手”（保留一个默认即可）
             await assistants.delete_many({"is_default": {"$ne": True}})
 
             # 初始化默认知识空间
