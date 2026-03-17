@@ -367,7 +367,7 @@ class OllamaService:
             params_text = match.group(2)
             
             # 验证工具函数名称（防止AI使用占位符）
-            if not tool_name or tool_name in ["工具函数名称", "function_name", "tool_name", "函数名称"]:
+            if not tool_name or tool_name in ["工具函数名称", "function_name", "tool_name", "函数名称", "实际的工具函数名称"]:
                 logger.warning(f"检测到占位符工具函数名称: '{tool_name}'，跳过调用")
                 tool_results.append({
                     "tool": tool_name,
@@ -423,9 +423,9 @@ class OllamaService:
                 params["assistant_id"] = assistant_id
                 logger.debug(f"自动注入assistant_id到工具函数 {tool_name}: {assistant_id}")
             
-            # 调用工具函数
+            # 调用工具函数（异步调用，避免在运行中的事件循环内使用 asyncio.run 导致 Motor 跨 loop 报错）
             try:
-                result = ai_tools.call_tool(tool_name, params if params else None)
+                result = await ai_tools.async_call_tool(tool_name, params if params else None)
                 tool_results.append({
                     "tool": tool_name,
                     "result": result

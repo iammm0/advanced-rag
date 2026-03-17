@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, memo } from "react";
 import { ChatMessage as MessageType } from "@/types/chat";
 import FormattedMessage from "@/components/message/FormattedMessage";
 import ThinkingDots from "@/components/message/ThinkingDots";
+import RAGEvaluationPanel from "@/components/chat/RAGEvaluationPanel";
 import { formatChatTimestamp } from "@/lib/timezone";
 
 interface ChatMessageProps {
@@ -161,6 +162,14 @@ function ChatMessageImpl({
               ))}
             </ul>
           </div>
+        )}
+
+        {/* RAG 评测指标（折叠，仅助手消息且存在检索/指标时展示） */}
+        {!isUser && (message.rag_metrics || (message.sources && message.sources.length > 0)) && (
+          <RAGEvaluationPanel
+            metrics={message.rag_metrics}
+            sourceCount={message.sources?.length ?? 0}
+          />
         )}
       </div>
     </div>

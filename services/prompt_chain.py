@@ -252,11 +252,12 @@ class PromptChain:
 **格式说明**：
 ```
 <function_calls>
-<invoke name="实际的工具函数名称">
+<invoke name="get_system_info">
 <parameter name="参数名">参数值</parameter>
 </invoke>
 </function_calls>
 ```
+（其中 name 的值必须是下面列出的实际工具函数名称之一，例如 get_system_info、get_knowledge_base_documents 等）
 
 **实际示例**：
 ```

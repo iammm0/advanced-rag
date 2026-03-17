@@ -4,6 +4,7 @@ from utils.logger import logger
 import requests
 import os
 import json
+import asyncio
 from database.mongodb import mongodb
 
 
@@ -118,9 +119,19 @@ class AITools:
         """
         return list(self.tools.values())
     
+    def _filter_tool_arguments(self, name: str, arguments: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """只保留该工具 schema 中声明的参数，忽略模型误传的占位符（如 参数名、参数值）"""
+        if not arguments:
+            return {}
+        schema = self.tools.get(name, {}).get("parameters", {})
+        allowed = schema.get("properties", {})
+        if not allowed:
+            return {}
+        return {k: v for k, v in arguments.items() if k in allowed}
+
     def call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Any:
         """
-        调用指定的工具函数
+        同步调用指定的工具函数（注意：在已运行事件循环的线程中调用含 MongoDB 的工具会报错，请使用 async_call_tool）
         
         Args:
             name: 工具名称
@@ -131,13 +142,54 @@ class AITools:
         """
         if name not in self.functions:
             raise ValueError(f"未知的工具函数: {name}")
-        
+        filtered = self._filter_tool_arguments(name, arguments)
         try:
             func = self.functions[name]
-            if arguments:
-                return func(**arguments)
-            else:
-                return func()
+            if filtered:
+                return func(**filtered)
+            return func()
+        except Exception as e:
+            logger.error(f"调用工具函数 {name} 失败: {str(e)}", exc_info=True)
+            raise
+
+    async def async_call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Any:
+        """
+        异步调用指定的工具函数（在已有事件循环的上下文中使用，避免 asyncio.run 与 Motor 跨 loop 问题）
+        
+        Args:
+            name: 工具名称
+            arguments: 工具参数
+        
+        Returns:
+            工具函数的返回值
+        """
+        if name not in self.functions:
+            raise ValueError(f"未知的工具函数: {name}")
+        filtered = self._filter_tool_arguments(name, arguments)
+        
+        # 使用 MongoDB 的异步工具：直接 await 异步实现
+        async_tools = {
+            "get_knowledge_base_documents": self._aget_knowledge_base_documents,
+            "get_system_info": self._aget_system_info,
+            "get_knowledge_base_stats": self._aget_knowledge_base_stats,
+        }
+        if name in async_tools:
+            try:
+                func = async_tools[name]
+                if filtered:
+                    return await func(**filtered)
+                return await func()
+            except Exception as e:
+                logger.error(f"调用工具函数 {name} 失败: {str(e)}", exc_info=True)
+                raise
+        
+        # 纯同步工具（如 get_available_ollama_models）在线程池中执行，避免阻塞事件循环
+        try:
+            loop = asyncio.get_event_loop()
+            func = self.functions[name]
+            if filtered:
+                return await loop.run_in_executor(None, lambda: func(**filtered))
+            return await loop.run_in_executor(None, func)
         except Exception as e:
             logger.error(f"调用工具函数 {name} 失败: {str(e)}", exc_info=True)
             raise
@@ -213,60 +265,26 @@ class AITools:
                 "error": f"获取模型列表时发生错误: {str(e)}"
             }
     
-    def _get_knowledge_base_documents(self, limit: int = 10, assistant_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        获取知识库中的文档列表（实时获取）
-        
-        Args:
-            limit: 返回的文档数量限制
-            assistant_id: 助手ID（可选），如果提供则获取该助手知识库的文档列表
-        
-        Returns:
-            包含文档列表的字典
-        """
+    async def _aget_knowledge_base_documents(self, limit: int = 10, assistant_id: Optional[str] = None) -> Dict[str, Any]:
+        """异步：获取知识库中的文档列表（供 async_call_tool 在事件循环内调用）"""
         try:
-            import asyncio
-            
-            async def _fetch_docs():
-                collection = mongodb.get_collection("documents")
-                
-                query = {}
-                if assistant_id:
-                    query["assistant_id"] = assistant_id
-                
-                # 获取文档列表（按创建时间倒序）
-                cursor = collection.find(query).sort("created_at", -1).limit(limit)
-                documents = []
-                
-                async for doc in cursor:
-                    documents.append({
-                        "id": str(doc["_id"]),
-                        "title": doc.get("title", "未命名文档"),
-                        "file_type": doc.get("file_type", ""),
-                        "status": doc.get("status", ""),
-                        "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else "",
-                        "file_size": doc.get("file_size", 0)
-                    })
-                
-                total = await collection.count_documents(query)
-                
-                return documents, total
-            
-            # 执行异步查询
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, _fetch_docs())
-                        documents, total = future.result()
-                else:
-                    documents, total = loop.run_until_complete(_fetch_docs())
-            except RuntimeError:
-                documents, total = asyncio.run(_fetch_docs())
-            
+            collection = mongodb.get_collection("documents")
+            query = {}
+            if assistant_id:
+                query["assistant_id"] = assistant_id
+            cursor = collection.find(query).sort("created_at", -1).limit(limit)
+            documents = []
+            async for doc in cursor:
+                documents.append({
+                    "id": str(doc["_id"]),
+                    "title": doc.get("title", "未命名文档"),
+                    "file_type": doc.get("file_type", ""),
+                    "status": doc.get("status", ""),
+                    "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else "",
+                    "file_size": doc.get("file_size", 0)
+                })
+            total = await collection.count_documents(query)
             logger.info(f"获取知识库文档列表成功 - 助手ID: {assistant_id or '全部'}, 总数: {total}, 返回: {len(documents)}")
-            
             result = {
                 "success": True,
                 "documents": documents,
@@ -274,11 +292,9 @@ class AITools:
                 "returned": len(documents),
                 "message": f"知识库共有 {total} 个文档，返回了最新的 {len(documents)} 个（实时数据）"
             }
-            
             if assistant_id:
                 result["assistant_id"] = assistant_id
                 result["message"] = f"助手知识库共有 {total} 个文档，返回了最新的 {len(documents)} 个（实时数据）"
-            
             return result
         except Exception as e:
             logger.error(f"获取知识库文档列表失败: {str(e)}", exc_info=True)
@@ -289,36 +305,37 @@ class AITools:
                 "returned": 0,
                 "error": f"获取文档列表时发生错误: {str(e)}"
             }
-    
-    def _get_system_info(self, assistant_id: Optional[str] = None) -> Dict[str, Any]:
+
+    def _get_knowledge_base_documents(self, limit: int = 10, assistant_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        获取系统基本信息（实时获取当前配置）
-        
-        Args:
-            assistant_id: 助手ID（可选），如果提供则获取该助手的特定配置
-        
-        Returns:
-            包含系统信息的字典
+        获取知识库中的文档列表（实时获取）。在已有事件循环中请使用 async_call_tool + _aget_knowledge_base_documents。
         """
         try:
-            import os
-            import asyncio
-            
-            # 默认模型（从环境变量）
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None:
+                # 已在异步上下文中，不应在此同步方法内再起 asyncio.run，由调用方使用 async_call_tool
+                raise RuntimeError(
+                    "在已运行的事件循环中不能在此同步方法内执行 MongoDB 异步操作，请使用 ai_tools.async_call_tool(name, arguments)"
+                )
+            return asyncio.run(self._aget_knowledge_base_documents(limit=limit, assistant_id=assistant_id))
+        except Exception as e:
+            logger.error(f"获取知识库文档列表失败: {str(e)}", exc_info=True)
+            return {"success": False, "documents": [], "total": 0, "returned": 0, "error": str(e)}
+    
+    async def _aget_system_info(self, assistant_id: Optional[str] = None) -> Dict[str, Any]:
+        """异步：获取系统基本信息（供 async_call_tool 在事件循环内调用）"""
+        try:
             default_generation_model = os.getenv("OLLAMA_MODEL", "gemma3:1b")
             from embedding.embedding_service import embedding_service
             default_embedding_model = embedding_service.model_name if hasattr(embedding_service, 'model_name') else "未知"
-            
-            # 实际使用的模型（从assistant配置或默认值）
             actual_generation_model = default_generation_model
             actual_embedding_model = default_embedding_model
             assistant_name = None
-            
-            # 如果提供了assistant_id，获取该assistant的配置
-            async def _get_assistant_config():
-                if not assistant_id:
-                    return None, None, None
-                
+
+            if assistant_id:
                 try:
                     collection = mongodb.get_collection("course_assistants")
                     assistant_doc = await collection.find_one({"_id": assistant_id})
@@ -326,66 +343,29 @@ class AITools:
                         assistant_name = assistant_doc.get("name", "")
                         inference_model = assistant_doc.get("inference_model")
                         embedding_model = assistant_doc.get("embedding_model")
-                        return inference_model or default_generation_model, embedding_model or default_embedding_model, assistant_name
+                        if inference_model:
+                            actual_generation_model = inference_model
+                        if embedding_model:
+                            actual_embedding_model = embedding_model
                 except Exception as e:
                     logger.warning(f"获取助手配置失败: {str(e)}")
-                return None, None, None
-            
-            # 执行异步查询
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, _get_assistant_config())
-                        inf_model, emb_model, name = future.result()
-                else:
-                    inf_model, emb_model, name = loop.run_until_complete(_get_assistant_config())
-            except RuntimeError:
-                inf_model, emb_model, name = asyncio.run(_get_assistant_config())
-            
-            if inf_model:
-                actual_generation_model = inf_model
-            if emb_model:
-                actual_embedding_model = emb_model
-            if name:
-                assistant_name = name
-            
-            # 获取知识库统计（异步）
-            async def _get_stats():
-                collection = mongodb.get_collection("documents")
-                
-                query = {}
-                if assistant_id:
-                    query["assistant_id"] = assistant_id
-                
-                total_docs = await collection.count_documents(query)
-                completed_docs = await collection.count_documents({**query, "status": "completed"})
-                processing_docs = await collection.count_documents({**query, "status": "processing"})
-                failed_docs = await collection.count_documents({**query, "status": "failed"})
-                
-                return {
-                    "total_documents": total_docs,
-                    "completed": completed_docs,
-                    "processing": processing_docs,
-                    "failed": failed_docs
-                }
-            
-            # 执行异步查询
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, _get_stats())
-                        kb_stats = future.result()
-                else:
-                    kb_stats = loop.run_until_complete(_get_stats())
-            except RuntimeError:
-                kb_stats = asyncio.run(_get_stats())
-            
+
+            collection = mongodb.get_collection("documents")
+            query = {}
+            if assistant_id:
+                query["assistant_id"] = assistant_id
+            total_docs = await collection.count_documents(query)
+            completed_docs = await collection.count_documents({**query, "status": "completed"})
+            processing_docs = await collection.count_documents({**query, "status": "processing"})
+            failed_docs = await collection.count_documents({**query, "status": "failed"})
+            kb_stats = {
+                "total_documents": total_docs,
+                "completed": completed_docs,
+                "processing": processing_docs,
+                "failed": failed_docs
+            }
+
             logger.info(f"获取系统信息成功 - 助手ID: {assistant_id or '默认'}, 推理模型: {actual_generation_model}, 向量化模型: {actual_embedding_model}")
-            
             result = {
                 "success": True,
                 "generation_model": actual_generation_model,
@@ -393,135 +373,123 @@ class AITools:
                 "knowledge_base": kb_stats,
                 "message": "系统信息获取成功（实时数据）"
             }
-            
             if assistant_id and assistant_name:
                 result["assistant_id"] = assistant_id
                 result["assistant_name"] = assistant_name
                 result["message"] = f"助手 '{assistant_name}' 的系统信息获取成功（实时数据）"
-            
             return result
         except Exception as e:
             logger.error(f"获取系统信息失败: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "error": f"获取系统信息时发生错误: {str(e)}"
-            }
-    
-    def _get_knowledge_base_stats(self, assistant_id: Optional[str] = None) -> Dict[str, Any]:
+            return {"success": False, "error": f"获取系统信息时发生错误: {str(e)}"}
+
+    def _get_system_info(self, assistant_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        获取知识库的详细统计信息（实时获取）
-        
-        Args:
-            assistant_id: 助手ID（可选），如果提供则获取该助手知识库的统计信息
-        
-        Returns:
-            包含知识库统计信息的字典
+        获取系统基本信息（实时获取）。在已有事件循环中请使用 async_call_tool。
         """
         try:
-            import asyncio
-            
-            async def _get_detailed_stats():
-                collection = mongodb.get_collection("documents")
-                chunks_collection = mongodb.get_collection("chunks")
-                
-                query = {}
-                if assistant_id:
-                    query["assistant_id"] = assistant_id
-                
-                # 文档统计
-                total_docs = await collection.count_documents(query)
-                completed_docs = await collection.count_documents({**query, "status": "completed"})
-                processing_docs = await collection.count_documents({**query, "status": "processing"})
-                failed_docs = await collection.count_documents({**query, "status": "failed"})
-                
-                # 获取文档列表（最新的10个）
-                cursor = collection.find(query).sort("created_at", -1).limit(10)
-                recent_docs = []
-                async for doc in cursor:
-                    recent_docs.append({
-                        "id": str(doc["_id"]),
-                        "title": doc.get("title", "未命名文档"),
-                        "file_type": doc.get("file_type", ""),
-                        "status": doc.get("status", ""),
-                        "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else "",
-                        "file_size": doc.get("file_size", 0)
-                    })
-                
-                # 文本块统计
-                chunk_query = {}
-                if assistant_id:
-                    # 通过文档ID关联查询
-                    doc_ids = []
-                    async for doc in collection.find(query, {"_id": 1}):
-                        doc_ids.append(str(doc["_id"]))
-                    if doc_ids:
-                        chunk_query["document_id"] = {"$in": doc_ids}
-                    else:
-                        chunk_query["document_id"] = {"$in": []}  # 空列表，不会有结果
-                
-                total_chunks = await chunks_collection.count_documents(chunk_query) if chunk_query.get("document_id") else await chunks_collection.count_documents({})
-                
-                # 向量统计（从Qdrant获取）
-                total_vectors = 0
-                try:
-                    from database.qdrant_client import get_qdrant_client
-                    if assistant_id:
-                        # 获取assistant的collection_name
-                        assistant_collection = mongodb.get_collection("course_assistants")
-                        assistant_doc = await assistant_collection.find_one({"_id": assistant_id})
-                        if assistant_doc:
-                            collection_name = assistant_doc.get("collection_name", "advanced_rag_knowledge")
-                            qdrant = get_qdrant_client(collection_name)
-                            total_vectors = qdrant.get_collection_info().get("points_count", 0)
-                    else:
-                        # 默认集合
-                        qdrant = get_qdrant_client("advanced_rag_knowledge")
-                        total_vectors = qdrant.get_collection_info().get("points_count", 0)
-                except Exception as e:
-                    logger.warning(f"获取向量统计失败: {str(e)}")
-                
-                return {
-                    "total_documents": total_docs,
-                    "completed": completed_docs,
-                    "processing": processing_docs,
-                    "failed": failed_docs,
-                    "total_chunks": total_chunks,
-                    "total_vectors": total_vectors,
-                    "recent_documents": recent_docs
-                }
-            
-            # 执行异步查询
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, _get_detailed_stats())
-                        stats = future.result()
-                else:
-                    stats = loop.run_until_complete(_get_detailed_stats())
+                loop = asyncio.get_running_loop()
             except RuntimeError:
-                stats = asyncio.run(_get_detailed_stats())
-            
+                loop = None
+            if loop is not None:
+                raise RuntimeError(
+                    "在已运行的事件循环中不能在此同步方法内执行 MongoDB 异步操作，请使用 ai_tools.async_call_tool(name, arguments)"
+                )
+            return asyncio.run(self._aget_system_info(assistant_id=assistant_id))
+        except Exception as e:
+            logger.error(f"获取系统信息失败: {str(e)}", exc_info=True)
+            return {"success": False, "error": f"获取系统信息时发生错误: {str(e)}"}
+    
+    async def _aget_knowledge_base_stats(self, assistant_id: Optional[str] = None) -> Dict[str, Any]:
+        """异步：获取知识库详细统计（供 async_call_tool 在事件循环内调用）"""
+        try:
+            collection = mongodb.get_collection("documents")
+            chunks_collection = mongodb.get_collection("chunks")
+            query = {}
+            if assistant_id:
+                query["assistant_id"] = assistant_id
+
+            total_docs = await collection.count_documents(query)
+            completed_docs = await collection.count_documents({**query, "status": "completed"})
+            processing_docs = await collection.count_documents({**query, "status": "processing"})
+            failed_docs = await collection.count_documents({**query, "status": "failed"})
+
+            cursor = collection.find(query).sort("created_at", -1).limit(10)
+            recent_docs = []
+            async for doc in cursor:
+                recent_docs.append({
+                    "id": str(doc["_id"]),
+                    "title": doc.get("title", "未命名文档"),
+                    "file_type": doc.get("file_type", ""),
+                    "status": doc.get("status", ""),
+                    "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else "",
+                    "file_size": doc.get("file_size", 0)
+                })
+
+            chunk_query = {}
+            if assistant_id:
+                doc_ids = []
+                async for doc in collection.find(query, {"_id": 1}):
+                    doc_ids.append(str(doc["_id"]))
+                chunk_query["document_id"] = {"$in": doc_ids} if doc_ids else {"$in": []}
+            total_chunks = await chunks_collection.count_documents(chunk_query) if chunk_query.get("document_id") else await chunks_collection.count_documents({})
+
+            total_vectors = 0
+            try:
+                from database.qdrant_client import get_qdrant_client
+                if assistant_id:
+                    assistant_collection = mongodb.get_collection("course_assistants")
+                    assistant_doc = await assistant_collection.find_one({"_id": assistant_id})
+                    if assistant_doc:
+                        collection_name = assistant_doc.get("collection_name", "advanced_rag_knowledge")
+                        qdrant = get_qdrant_client(collection_name)
+                        total_vectors = qdrant.get_collection_info().get("points_count", 0)
+                else:
+                    qdrant = get_qdrant_client("advanced_rag_knowledge")
+                    total_vectors = qdrant.get_collection_info().get("points_count", 0)
+            except Exception as e:
+                logger.warning(f"获取向量统计失败: {str(e)}")
+
+            stats = {
+                "total_documents": total_docs,
+                "completed": completed_docs,
+                "processing": processing_docs,
+                "failed": failed_docs,
+                "total_chunks": total_chunks,
+                "total_vectors": total_vectors,
+                "recent_documents": recent_docs
+            }
             logger.info(f"获取知识库统计成功 - 助手ID: {assistant_id or '全部'}, 文档数: {stats['total_documents']}, 向量数: {stats['total_vectors']}")
-            
             result = {
                 "success": True,
                 **stats,
                 "message": f"知识库统计信息获取成功（实时数据）- 共有 {stats['total_documents']} 个文档，{stats['total_chunks']} 个文本块，{stats['total_vectors']} 个向量"
             }
-            
             if assistant_id:
                 result["assistant_id"] = assistant_id
                 result["message"] = f"助手知识库统计信息获取成功（实时数据）- 共有 {stats['total_documents']} 个文档，{stats['total_chunks']} 个文本块，{stats['total_vectors']} 个向量"
-            
             return result
         except Exception as e:
             logger.error(f"获取知识库统计失败: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "error": f"获取知识库统计时发生错误: {str(e)}"
-            }
+            return {"success": False, "error": f"获取知识库统计时发生错误: {str(e)}"}
+
+    def _get_knowledge_base_stats(self, assistant_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        获取知识库的详细统计信息（实时获取）。在已有事件循环中请使用 async_call_tool。
+        """
+        try:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None:
+                raise RuntimeError(
+                    "在已运行的事件循环中不能在此同步方法内执行 MongoDB 异步操作，请使用 ai_tools.async_call_tool(name, arguments)"
+                )
+            return asyncio.run(self._aget_knowledge_base_stats(assistant_id=assistant_id))
+        except Exception as e:
+            logger.error(f"获取知识库统计失败: {str(e)}", exc_info=True)
+            return {"success": False, "error": f"获取知识库统计时发生错误: {str(e)}"}
 
 
 # 全局AI工具实例

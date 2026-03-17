@@ -1,5 +1,23 @@
 /** 聊天相关类型定义 */
 
+/** 单次对话触发的 RAG 评测指标（用于折叠面板展示） */
+export interface RAGEvaluationMetrics {
+  /** 是否触发了增强检索 */
+  retrieval_triggered: boolean;
+  /** 召回条数（来源 chunk 数） */
+  source_count: number;
+  /** 上下文字符长度 */
+  context_length: number;
+  /** 检索耗时（毫秒） */
+  retrieval_time_ms?: number;
+  /** 首 token 前耗时（毫秒） */
+  time_to_first_token_ms?: number;
+  /** 总响应耗时（毫秒） */
+  response_time_ms?: number;
+  /** 异常标记：如 响应时间>500ms、召回率低 等，用于告警展示 */
+  warnings?: string[];
+}
+
 export interface ChatMessage {
   message_id?: string;  // 消息唯一ID
   role: "user" | "assistant";
@@ -11,6 +29,8 @@ export interface ChatMessage {
   user_relationships?: UserRelationship[];  // 用户关系（网络模式）
   recommendation_reason?: string;  // 推荐理由（网络模式）
   cypher_queries?: CypherQuery[];  // Cypher查询思维链（网络模式）
+  /** 本条回复的 RAG 评测指标（仅助手消息，折叠展示） */
+  rag_metrics?: RAGEvaluationMetrics;
 }
 
 export interface CypherQuery {

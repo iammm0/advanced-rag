@@ -11,7 +11,7 @@ import DeepResearchRenderer from "@/components/chat/DeepResearchRenderer";
 import AgentStatusPanel from "@/components/chat/AgentStatusPanel";
 import Toast from "@/components/ui/Toast";
 import { apiClient, Document, Model } from "@/lib/api";
-import { ChatMessage as MessageType, SourceInfo } from "../../types/chat";
+import { ChatMessage as MessageType, SourceInfo, type RAGEvaluationMetrics } from "../../types/chat";
 import {
   addConversation,
 } from "@/lib/conversation";
@@ -713,6 +713,12 @@ export default function ChatPage() {
     let context = "";
     let sources: SourceInfo[] = [];
     let recommendedResources: any[] = [];
+    /** RAG 评测计时（仅常规模式） */
+    let retrievalStartMs = 0;
+    let retrievalTimeMs: number | undefined;
+    let responseStartMs = 0;
+    let responseTimeMs: number | undefined;
+    let ttftMs: number | undefined;
 
     // Model Config
     const generationConfig = {
@@ -792,6 +798,7 @@ export default function ChatPage() {
 
       if (needRetrieval) {
         setLoadingStep(2); // 步骤2: 检索知识库
+        retrievalStartMs = Date.now();
         try {
           const retrievalResult = await apiClient.retrieve({
             query: userMessage.content,
@@ -806,8 +813,10 @@ export default function ChatPage() {
             recommendedResources = retrievalResult.data.recommended_resources || [];
             hasContext = context.length > 0;
           }
+          retrievalTimeMs = Date.now() - retrievalStartMs;
         } catch (error) {
           console.warn("RAG检索失败，继续不使用上下文:", error);
+          retrievalTimeMs = Date.now() - retrievalStartMs;
         }
       } else {
         setLoadingStep(2);
@@ -1102,6 +1111,7 @@ export default function ChatPage() {
         setMessages((prev) => [...prev, assistantMessage]);
 
         isStreamingRef.current = true;
+        responseStartMs = Date.now();
         const chatStream = await apiClient.chat({
           message: userMessage.content,
           conversation_id: currentConversationId,
@@ -1116,6 +1126,7 @@ export default function ChatPage() {
 
         const reader = chatStream.getReader();
         const decoder = new TextDecoder();
+        let firstContentReceived = true;
 
         try {
           while (true) {
@@ -1134,6 +1145,10 @@ export default function ChatPage() {
                   const parsed = JSON.parse(data);
 
                   if (parsed.content) {
+                    if (firstContentReceived) {
+                      ttftMs = Date.now() - responseStartMs;
+                      firstContentReceived = false;
+                    }
                     const chunkText = parsed.content;
                     fullResponse += chunkText;
                     pendingContentRef.current = fullResponse;
@@ -1173,6 +1188,7 @@ export default function ChatPage() {
                   } else if (parsed.done) {
                     if (parsed.sources) sources = parsed.sources;
                     if (parsed.recommended_resources) recommendedResources = parsed.recommended_resources;
+                    responseTimeMs = Date.now() - responseStartMs;
                     setLoadingStep(5);
                     break;
                   } else if (parsed.error) {
@@ -1204,6 +1220,14 @@ export default function ChatPage() {
         }
 
         if (fullResponse) {
+          const ragMetrics: RAGEvaluationMetrics = {
+            retrieval_triggered: needRetrieval,
+            source_count: sources.length,
+            context_length: context.length,
+            retrieval_time_ms: retrievalTimeMs,
+            time_to_first_token_ms: ttftMs,
+            response_time_ms: responseTimeMs,
+          };
           setMessages((prev) => {
             const updated = [...prev];
             const lastMessage = updated[updated.length - 1];
@@ -1213,6 +1237,7 @@ export default function ChatPage() {
                 content: fullResponse,
                 sources: sources.length > 0 ? sources : undefined,
                 recommended_resources: recommendedResources.length > 0 ? recommendedResources : undefined,
+                rag_metrics: ragMetrics,
               };
             }
             return updated;
