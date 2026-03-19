@@ -11,10 +11,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, Field
 
-from database.mongodb import mongodb
+from database.mongodb import mongodb, require_mongodb
 from utils.logger import logger
 
 
@@ -48,7 +48,11 @@ def _to_iso(dt) -> Optional[str]:
 
 
 @router.get("", response_model=KnowledgeSpaceListResponse)
-async def list_knowledge_spaces(skip: int = 0, limit: int = 100):
+async def list_knowledge_spaces(
+    skip: int = 0,
+    limit: int = 100,
+    _: None = Depends(require_mongodb),
+):
     logger.info(f"获取知识空间列表请求 - skip: {skip}, limit: {limit}")
     try:
         collection = mongodb.get_collection("knowledge_spaces")
@@ -79,7 +83,10 @@ async def list_knowledge_spaces(skip: int = 0, limit: int = 100):
 
 
 @router.post("", response_model=KnowledgeSpaceResponse, status_code=status.HTTP_201_CREATED)
-async def create_knowledge_space(request: KnowledgeSpaceCreateRequest):
+async def create_knowledge_space(
+    request: KnowledgeSpaceCreateRequest,
+    _: None = Depends(require_mongodb),
+):
     logger.info(f"创建知识空间请求 - name: {request.name}")
     try:
         collection = mongodb.get_collection("knowledge_spaces")

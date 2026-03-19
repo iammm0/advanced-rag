@@ -336,7 +336,11 @@ def process_document_background(
                 parsed_data = _parse_with_timeout(parser, file_path, doc_repo, doc_id)
             
             # 使用结果合成器统一输出格式
-            synthesizer = ResultSynthesizer()
+            synthesizer = ResultSynthesizer(
+                merge_tables_into_text=True,
+                merge_code_blocks_into_text=True,
+                use_raw_markdown_if_present=True,
+            )
             parsed_data = synthesizer.synthesize(parsed_data, parser_type, file_path)
             
         except Exception as e:
@@ -386,6 +390,22 @@ def process_document_background(
         chunk_metadata = metadata.copy() if metadata else {}
         chunk_metadata["file_type"] = file_ext
         chunks = _chunk_with_timeout(text, doc_repo, doc_id, chunk_metadata)
+
+        # 为后续重排/动态调参提供基本 token 统计（近似，不依赖外部 tokenizer）
+        try:
+            from utils.token_utils import estimate_tokens
+
+            for c in chunks:
+                if not isinstance(c, dict):
+                    continue
+                c_meta = c.get("metadata") or {}
+                if "token_count" not in c_meta:
+                    c_meta = c_meta.copy()
+                    c_meta["token_count"] = estimate_tokens(c.get("text", ""))
+                    c["metadata"] = c_meta
+        except Exception:
+            # 统计失败不影响主流程
+            pass
         
         logger.info(f"文档分块完成 - 文档ID: {doc_id}, 块数量: {len(chunks)}")
         
@@ -398,54 +418,87 @@ def process_document_background(
         
         # 阶段2.5: 知识抽取与图谱构建 (High-level RAG)
         try:
+            from services.runtime_config import get_runtime_config_sync
             from services.knowledge_extraction_service import knowledge_extraction_service
             import asyncio
             
-            logger.info(f"开始知识图谱构建 - 文档ID: {doc_id}, 块数量: {len(chunks)}")
-            doc_repo.update_document_progress(doc_id, 30, "知识图谱构建", "正在抽取实体关系...")
-            
-            # 定义异步任务
-            async def build_kg_for_chunks():
-                tasks = []
-                # 限制并发数为 3，避免 Ollama 过载
-                sem = asyncio.Semaphore(3)
-                
-                async def processed_chunk(chunk, idx):
-                    async with sem:
-                        meta = chunk.get("metadata", {}).copy()
-                        meta["document_id"] = doc_id
-                        meta["chunk_index"] = idx
-                        # 仅对文本类型的块进行抽取
-                        if meta.get("content_type", "text") == "text":
-                             await knowledge_extraction_service.build_graph(chunk["text"], meta)
-                
-                for i, chunk in enumerate(chunks):
-                    tasks.append(processed_chunk(chunk, i))
-                
-                # 分批处理，避免任务队列过长
-                batch_size = 10
-                for i in range(0, len(tasks), batch_size):
-                    batch_tasks = tasks[i:i+batch_size]
-                    await asyncio.gather(*batch_tasks)
-                    # 更新进度
-                    progress = 30 + int(((i + len(batch_tasks)) / len(tasks)) * 5) # 30-35%
-                    doc_repo.update_document_progress(doc_id, progress, "知识图谱构建", f"已处理 {min(i + batch_size, len(tasks))}/{len(tasks)} 块")
+            runtime_cfg = get_runtime_config_sync()
+            modules = runtime_cfg.get("modules") or {}
+            params = runtime_cfg.get("params") or {}
+            if not bool(modules.get("kg_extract_enabled", True)):
+                logger.info(f"已按运行时配置跳过知识图谱构建 - 文档ID: {doc_id}")
+            else:
+                logger.info(f"开始知识图谱构建 - 文档ID: {doc_id}, 块数量: {len(chunks)}")
+                doc_repo.update_document_progress(doc_id, 30, "知识图谱构建", "正在抽取实体关系...")
 
-            # 运行异步任务
-            # 注意：如果当前已经在 loop 中，asyncio.run 会失败。
-            # 但 process_document_background 是在线程池中运行的，通常没有 loop。
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                     # 理论上不应该发生，因为是在线程池中
-                     logger.warning("在运行中的循环中检测到知识图谱构建，尝试使用 run_coroutine_threadsafe (可能不支持)")
-                else:
-                     loop.run_until_complete(build_kg_for_chunks())
-            except RuntimeError:
-                # 没有 loop
-                asyncio.run(build_kg_for_chunks())
-                
-            logger.info(f"知识图谱构建完成 - 文档ID: {doc_id}")
+                # 定义异步任务
+                async def build_kg_for_chunks():
+                    tasks = []
+                    # 限制并发数（默认 3）
+                    kg_concurrency = int(params.get("kg_concurrency") or 3)
+                    sem = asyncio.Semaphore(max(1, kg_concurrency))
+                    chunk_timeout_s = int(params.get("kg_chunk_timeout_s") or 150)
+                    kg_max_chunks = int(params.get("kg_max_chunks") or 0)
+
+                    async def processed_chunk(chunk, idx):
+                        async with sem:
+                            meta = chunk.get("metadata", {}).copy()
+                            meta["document_id"] = doc_id
+                            meta["chunk_index"] = idx
+                            # 仅对文本类型的块进行抽取
+                            if meta.get("content_type", "text") == "text":
+                                try:
+                                    # 单 chunk 超时保护，避免某个 chunk 把整体卡死在 30%
+                                    await asyncio.wait_for(
+                                        knowledge_extraction_service.build_graph(chunk["text"], meta),
+                                        timeout=max(10, chunk_timeout_s),
+                                    )
+                                except asyncio.TimeoutError:
+                                    logger.warning(f"知识图谱构建超时，已跳过 chunk - 文档ID: {doc_id}, chunk_index: {idx}")
+                                except Exception as e:
+                                    logger.warning(
+                                        f"知识图谱构建失败，已跳过 chunk - 文档ID: {doc_id}, chunk_index: {idx}, 错误: {e}"
+                                    )
+
+                    # 可选：限制最大处理 chunks（用于低配/长文档降级）
+                    target_chunks = chunks
+                    if kg_max_chunks and kg_max_chunks > 0 and len(chunks) > kg_max_chunks:
+                        target_chunks = chunks[:kg_max_chunks]
+                        logger.info(f"知识图谱构建将仅处理前 {kg_max_chunks}/{len(chunks)} 个块 - 文档ID: {doc_id}")
+
+                    for i, chunk in enumerate(target_chunks):
+                        tasks.append(processed_chunk(chunk, i))
+
+                    # 分批处理，避免任务队列过长
+                    batch_size = 10
+                    for i in range(0, len(tasks), batch_size):
+                        batch_tasks = tasks[i : i + batch_size]
+                        # 不因单任务异常导致整批失败（processed_chunk 内也会兜底）
+                        await asyncio.gather(*batch_tasks, return_exceptions=True)
+                        # 更新进度
+                        progress = 30 + int(((i + len(batch_tasks)) / len(tasks)) * 5)  # 30-35%
+                        doc_repo.update_document_progress(
+                            doc_id,
+                            progress,
+                            "知识图谱构建",
+                            f"已处理 {min(i + batch_size, len(tasks))}/{len(tasks)} 块",
+                        )
+
+                # 运行异步任务
+                # 注意：如果当前已经在 loop 中，asyncio.run 会失败。
+                # 但 process_document_background 是在线程池中运行的，通常没有 loop。
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # 理论上不应该发生，因为是在线程池中
+                        logger.warning("在运行中的循环中检测到知识图谱构建，尝试使用 run_coroutine_threadsafe (可能不支持)")
+                    else:
+                        loop.run_until_complete(build_kg_for_chunks())
+                except RuntimeError:
+                    # 没有 loop
+                    asyncio.run(build_kg_for_chunks())
+
+                logger.info(f"知识图谱构建完成 - 文档ID: {doc_id}")
             
         except Exception as e:
             logger.error(f"知识图谱构建失败 (非致命错误): {e}", exc_info=True)
@@ -463,8 +516,15 @@ def process_document_background(
             doc_repo.update_document_progress(doc_id, 100, "完成", "文档为空，无需处理")
             return
         
-        # 分批向量化，每批50个
-        batch_size = 50
+        # 分批向量化（batch_size 可由运行时配置覆盖）
+        try:
+            from services.runtime_config import get_runtime_config_sync
+            runtime_cfg = get_runtime_config_sync()
+            params = runtime_cfg.get("params") or {}
+            batch_size = int(params.get("embedding_batch_size") or 50)
+        except Exception:
+            batch_size = 50
+        batch_size = max(1, batch_size)
         vectors = []
         total_batches = math.ceil(len(chunk_texts) / batch_size)
         
@@ -606,11 +666,28 @@ def process_document_background(
                     if chunk_id.startswith("temp_"):
                         # 跳过临时ID（MongoDB存储失败的块）
                         continue
+                    meta = (chunk.get("metadata") or {}).copy()
+                    # 仅保留对检索/拼接有价值且体积可控的字段
+                    # section_path 可能较长，这里限制单个元素长度，避免 payload 过大
+                    section_path = meta.get("section_path")
+                    if isinstance(section_path, list):
+                        section_path = [str(s)[:200] for s in section_path[:12]]
+                    elif section_path is not None:
+                        section_path = [str(section_path)[:200]]
+
                     batch_payloads.append({
                         "chunk_id": chunk_id,
                         "document_id": doc_id,
                         "text": chunk["text"],
-                        "chunk_index": batch_start + i
+                        "chunk_index": batch_start + i,
+                        # 用于邻居扩展与上下文去重的关键元数据
+                        "metadata": {
+                            "content_type": meta.get("content_type", "text"),
+                            "chunker_type": meta.get("chunker_type"),
+                            "token_count": meta.get("token_count"),
+                            "section_path": section_path,
+                            "file_type": meta.get("file_type"),
+                        }
                     })
                     batch_ids.append(chunk_id)
                 
@@ -746,13 +823,17 @@ async def upload_document(
     logger.info(f"文档上传请求 - 文件名: {file.filename}, 文件类型: {file.content_type}")
     
     # 检查文件类型（包括可以转换的格式）
-    allowed_extensions = {".pdf", ".docx", ".doc", ".md", ".txt", ".markdown"}
+    allowed_extensions = {
+        ".pdf", ".docx", ".doc", ".md", ".txt", ".markdown",
+        ".pptx", ".xlsx", ".xls", ".html", ".htm",
+        ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif",
+    }
     file_ext = os.path.splitext(file.filename)[1].lower()
-    
+
     if file_ext not in allowed_extensions:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的文件类型: {file_ext}。支持的类型: PDF, Word (.doc/.docx), Markdown, TXT"
+            detail=f"不支持的文件类型: {file_ext}。支持的类型: PDF, Word (.doc/.docx), Markdown, TXT, PowerPoint (.pptx), Excel (.xlsx/.xls), HTML, 图片 (.jpg/.png/.bmp/.webp/.tiff)"
         )
     
     # 保存文件并计算哈希

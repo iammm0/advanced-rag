@@ -28,6 +28,18 @@ class ParsingRouter:
                 logger.warning(f"Unstructured 解析器初始化失败: {e}")
                 return None
         return self.unstructured_parser
+
+    def _unstructured_pdf_available(self) -> bool:
+        """
+        检测 Unstructured 是否具备 PDF 分区能力。
+        仅安装 `unstructured` 本体时，`partition_pdf()` 可能不可用，需要额外依赖（unstructured[pdf]）。
+        """
+        try:
+            # 只要能导入 partition_pdf，通常就具备必要依赖
+            from unstructured.partition.pdf import partition_pdf  # noqa: F401
+            return True
+        except Exception:
+            return False
     
     def _detect_scanned_pdf(self, file_path: str) -> bool:
         """
@@ -226,14 +238,29 @@ class ParsingRouter:
         
         file_ext = os.path.splitext(file_path)[1].lower()
         
-        # 1. 检测复杂格式文档 -> Unstructured解析器
-        if self._detect_complex_format(file_path):
+        # 0. 显式路由：仅 Unstructured 支持的格式 -> 直接走 Unstructured
+        UNSTRUCTURED_ONLY_EXTENSIONS = ('.pptx', '.xlsx', '.xls', '.html', '.htm')
+        if file_ext in UNSTRUCTURED_ONLY_EXTENSIONS:
             parser = self._get_unstructured_parser()
             if parser:
-                logger.info(f"✓ 路由到 Unstructured 解析器: {file_path} (复杂格式)")
+                logger.info(f"✓ 显式路由到 Unstructured 解析器: {file_path} (扩展名: {file_ext})")
                 return self.PARSER_TYPE_UNSTRUCTURED, parser
+            logger.warning(f"Unstructured 解析器不可用，将尝试 ParserFactory: {file_path}")
+        
+        # 1. 检测复杂格式文档 -> Unstructured解析器
+        if self._detect_complex_format(file_path):
+            # 对于 PDF：如果 unstructured[pdf] 未安装，则不要路由到 Unstructured，避免先报错再回退造成噪音日志
+            if file_ext == ".pdf" and not self._unstructured_pdf_available():
+                logger.warning(
+                    f"检测到复杂 PDF 但 Unstructured 缺少 PDF 依赖（建议安装 unstructured[pdf]），将直接使用原有解析器: {file_path}"
+                )
             else:
-                logger.warning(f"Unstructured解析器不可用，回退到原有解析器: {file_path}")
+                parser = self._get_unstructured_parser()
+                if parser:
+                    logger.info(f"✓ 路由到 Unstructured 解析器: {file_path} (复杂格式)")
+                    return self.PARSER_TYPE_UNSTRUCTURED, parser
+                else:
+                    logger.warning(f"Unstructured解析器不可用，回退到原有解析器: {file_path}")
         
         # 2. 使用原有解析器（适合简单格式）
         parser = ParserFactory.get_parser(file_path)

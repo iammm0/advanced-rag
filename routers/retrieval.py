@@ -54,6 +54,21 @@ async def analyze_query(
     logger.info(f"查询分析请求 - 查询: {request.query[:50]}...")
     
     try:
+        # 运行时开关：可关闭模型查询分析（低配模式）
+        try:
+            from services.runtime_config import get_runtime_config
+
+            runtime_cfg = await get_runtime_config()
+            modules = runtime_cfg.get("modules") or {}
+            if not bool(modules.get("query_analyze_enabled", True)):
+                return QueryAnalysisResponse(
+                    need_retrieval=True,
+                    reason="已关闭查询分析模块，默认需要检索（安全策略）",
+                    confidence="low",
+                )
+        except Exception:
+            pass
+
         # 使用查询分析器判断（在线程池中执行同步方法）
         loop = asyncio.get_event_loop()
         analysis_result = await loop.run_in_executor(

@@ -4,6 +4,7 @@ from .base import BaseChunker
 from .simple_chunker import SimpleChunker
 from .sliding_window_chunker import SlidingWindowChunker
 from .smart_chunker import SmartChunker
+from .report_chunker import ReportChunker
 
 # 导出分块路由模块
 try:
@@ -15,6 +16,7 @@ try:
         "SimpleChunker",
         "SlidingWindowChunker",
         "SmartChunker",
+            "ReportChunker",
         "ContentAnalyzer",
         "RecursiveChunker",
         "SemanticChunker"
@@ -25,6 +27,7 @@ except ImportError:
         "BaseChunker",
         "SimpleChunker",
         "SlidingWindowChunker",
-        "SmartChunker"
+            "SmartChunker",
+            "ReportChunker"
     ]
 

@@ -1,8 +1,8 @@
 
-import asyncio
 import os
 import sys
 import logging
+import pytest
 
 # 添加项目根目录到 sys.path
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -24,9 +24,9 @@ print("DEBUG: All imports done")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def test_hybrid_chunker():
-    logger.info("--- 测试混合分块器 ---")
-    text = """
+@pytest.fixture
+def sample_text() -> str:
+    return """
     # RAG 系统介绍
     RAG (Retrieval-Augmented Generation) 是一种结合检索和生成的技术。
     
@@ -46,17 +46,25 @@ async def test_hybrid_chunker():
     | Retriever | 检索器 |
     | Generator | 生成器 |
     """
-    
-    chunker = HybridChunker(chunk_size=100, chunk_overlap=20)
-    chunks = chunker.chunk(text)
-    
-    logger.info(f"分块数量: {len(chunks)}")
-    for i, chunk in enumerate(chunks):
-        logger.info(f"块 {i+1} [{chunk['metadata'].get('content_type')}]: {chunk['text'][:50]}...")
-    
-    return chunks
 
+
+@pytest.fixture
+def chunks(sample_text):
+    chunker = HybridChunker(chunk_size=100, chunk_overlap=20)
+    return chunker.chunk(sample_text)
+
+
+def test_hybrid_chunker(chunks):
+    logger.info("--- 测试混合分块器 ---")
+    logger.info(f"分块数量: {len(chunks)}")
+    assert isinstance(chunks, list)
+    assert len(chunks) > 0
+    assert all(isinstance(c, dict) and "text" in c for c in chunks)
+
+@pytest.mark.asyncio
 async def test_knowledge_extraction(chunks):
+    if os.getenv("RUN_INTEGRATION_TESTS", "0") != "1":
+        pytest.skip("跳过集成测试（设置 RUN_INTEGRATION_TESTS=1 才运行）")
     logger.info("\n--- 测试知识抽取与图谱构建 ---")
     
     # 检查 Neo4j 连接
@@ -81,10 +89,13 @@ async def test_knowledge_extraction(chunks):
     )
     logger.info("知识抽取与入库完成 (请检查 Neo4j)")
 
+@pytest.mark.asyncio
 async def test_retrieval():
+    if os.getenv("RUN_INTEGRATION_TESTS", "0") != "1":
+        pytest.skip("跳过集成测试（设置 RUN_INTEGRATION_TESTS=1 才运行）")
     logger.info("\n--- 测试混合检索 ---")
     
-    retriever = RAGRetriever(top_k=3)
+    retriever = RAGRetriever(final_k=3)
     query = "RAG 系统是什么？"
     
     # 注意：这里可能因为没有向量库数据而检索不到向量结果，
@@ -94,30 +105,4 @@ async def test_retrieval():
     results = await retriever.retrieve_async(query)
     
     logger.info(f"检索结果数量: {len(results)}")
-    for i, res in enumerate(results):
-        logger.info(f"结果 {i+1} [{res['payload'].get('retrieval_type')}]: {res['payload'].get('text')[:100]}...")
-
-async def main():
-    print("DEBUG: Starting main()")
-    try:
-        print("DEBUG: Calling test_hybrid_chunker()")
-        chunks = await test_hybrid_chunker()
-        print(f"DEBUG: test_hybrid_chunker returned {len(chunks)} chunks")
-        
-        print("DEBUG: Calling test_knowledge_extraction()")
-        await test_knowledge_extraction(chunks)
-        print("DEBUG: test_knowledge_extraction done")
-        
-        print("DEBUG: Calling test_retrieval()")
-        await test_retrieval()
-        print("DEBUG: test_retrieval done")
-        
-        logger.info("\n=== 所有测试完成 ===")
-    except Exception as e:
-        print(f"DEBUG: Exception in main: {e}")
-        logger.error(f"测试过程中出错: {e}", exc_info=True)
-
-if __name__ == "__main__":
-    print("DEBUG: Script started")
-    asyncio.run(main())
-    print("DEBUG: Script finished")
+    assert isinstance(results, list)

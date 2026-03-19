@@ -17,6 +17,16 @@ class MarkdownParser(BaseParser):
             with open(file_path, 'r', encoding='utf-8') as file:
                 md_content = file.read()
             
+            # 运行时开关（同步解析路径）
+            try:
+                from services.runtime_config import get_runtime_config_sync
+
+                _cfg = get_runtime_config_sync()
+                _modules = _cfg.get("modules") or {}
+                table_enabled = bool(_modules.get("table_parse_enabled", True))
+            except Exception:
+                table_enabled = True
+            
             # 提取纯文本（去除Markdown标记）
             md = markdown.Markdown(
                 extensions=['codehilite', 'tables', 'fenced_code']
@@ -35,20 +45,21 @@ class MarkdownParser(BaseParser):
             
             # 增强功能：提取表格
             tables_info = []
-            try:
-                from utils.table_extractor import TableExtractor
-                tables = TableExtractor.extract_table_from_text(md_content)
-                for table in tables:
-                    tables_info.append({
-                        "type": table.get("type"),
-                        "html": table.get("html"),
-                        "markdown": table.get("markdown"),
-                        "semantic": TableExtractor.extract_semantic_structure(table.get("data", []))
-                    })
-                if tables_info:
-                    metadata["tables"] = tables_info
-            except Exception as e:
-                logger.warning(f"表格提取失败: {e}")
+            if table_enabled:
+                try:
+                    from utils.table_extractor import TableExtractor
+                    tables = TableExtractor.extract_table_from_text(md_content)
+                    for table in tables:
+                        tables_info.append({
+                            "type": table.get("type"),
+                            "html": table.get("html"),
+                            "markdown": table.get("markdown"),
+                            "semantic": TableExtractor.extract_semantic_structure(table.get("data", []))
+                        })
+                    if tables_info:
+                        metadata["tables"] = tables_info
+                except Exception as e:
+                    logger.warning(f"表格提取失败: {e}")
             
             # 增强功能：分析代码块
             code_blocks_info = []
@@ -65,6 +76,7 @@ class MarkdownParser(BaseParser):
                     analysis = CodeAnalyzer.analyze_code_block(code_content, language)
                     code_blocks_info.append({
                         "language": language,
+                        "content": code_content,
                         "analysis": analysis
                     })
                 

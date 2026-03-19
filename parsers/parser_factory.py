@@ -1,21 +1,38 @@
 """文档解析器工厂"""
-from typing import Optional
+from typing import Optional, List
 from .base import BaseParser
 from .pdf_parser import PDFParser
 from .text_parser import TextParser
 from .markdown_parser import MarkdownParser
 from .word_parser import WordParser
 
+try:
+    from .unstructured.unstructured_parser import UnstructuredParser
+    _UNSTRUCTURED_AVAILABLE = True
+except Exception:
+    UnstructuredParser = None  # type: ignore
+    _UNSTRUCTURED_AVAILABLE = False
+
+from .image_parser import ImageParser
+
+
+def _build_parsers() -> List[BaseParser]:
+    parsers: List[BaseParser] = [
+        PDFParser(),
+        TextParser(),
+        MarkdownParser(),
+        WordParser(),
+    ]
+    if _UNSTRUCTURED_AVAILABLE and UnstructuredParser is not None:
+        parsers.append(UnstructuredParser())
+    parsers.append(ImageParser())
+    return parsers
+
 
 class ParserFactory:
     """文档解析器工厂类"""
     
-    _parsers: list[BaseParser] = [
-        PDFParser(),
-        TextParser(),
-        MarkdownParser(),
-        WordParser()
-    ]
+    _parsers: List[BaseParser] = _build_parsers()
     
     @classmethod
     def get_parser(cls, file_path: str) -> Optional[BaseParser]:

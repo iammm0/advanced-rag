@@ -55,6 +55,24 @@ services:
     networks:
       - advanced-rag-dev-network
 
+  # Redis 缓存服务（本地开发，可选）
+  redis:
+    image: redis:7
+    container_name: advanced-rag-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - advanced-rag-dev-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   mongodb_data:
     driver: local
@@ -69,6 +87,8 @@ volumes:
   neo4j_import:
     driver: local
   neo4j_plugins:
+    driver: local
+  redis_data:
     driver: local
 
 networks:

@@ -147,6 +147,17 @@ class WordParser(BaseParser):
         
         try:
             doc = Document(file_path)
+            # 运行时开关（同步解析路径）
+            try:
+                from services.runtime_config import get_runtime_config_sync
+
+                _cfg = get_runtime_config_sync()
+                _modules = _cfg.get("modules") or {}
+                ocr_enabled = bool(_modules.get("ocr_image_enabled", True))
+                table_enabled = bool(_modules.get("table_parse_enabled", True))
+            except Exception:
+                ocr_enabled = True
+                table_enabled = True
             
             # 提取文本内容，确保使用UTF-8编码
             paragraphs = []
@@ -173,32 +184,33 @@ class WordParser(BaseParser):
             # 增强功能：提取表格（保留格式）
             tables_info = []
             tables_text = []
-            for table in doc.tables:
-                table_data = []
-                for row in table.rows:
-                    row_data = [
-                        cell.text.strip().encode('utf-8', errors='replace').decode('utf-8')
-                        for cell in row.cells
-                    ]
-                    table_data.append(row_data)
-                    row_text = " | ".join(row_data)
-                    tables_text.append(row_text)
-                
-                if table_data:
-                    # 提取表格的HTML和Markdown格式
-                    try:
-                        from utils.table_extractor import TableExtractor
-                        semantic_info = TableExtractor.extract_semantic_structure(table_data)
-                        html_format = TableExtractor._to_html(table_data)
-                        markdown_format = TableExtractor._to_markdown(table_data)
-                        
-                        tables_info.append({
-                            "html": html_format,
-                            "markdown": markdown_format,
-                            "semantic": semantic_info
-                        })
-                    except Exception as e:
-                        logger.warning(f"表格格式化失败: {e}")
+            if table_enabled:
+                for table in doc.tables:
+                    table_data = []
+                    for row in table.rows:
+                        row_data = [
+                            cell.text.strip().encode('utf-8', errors='replace').decode('utf-8')
+                            for cell in row.cells
+                        ]
+                        table_data.append(row_data)
+                        row_text = " | ".join(row_data)
+                        tables_text.append(row_text)
+                    
+                    if table_data:
+                        # 提取表格的HTML和Markdown格式
+                        try:
+                            from utils.table_extractor import TableExtractor
+                            semantic_info = TableExtractor.extract_semantic_structure(table_data)
+                            html_format = TableExtractor._to_html(table_data)
+                            markdown_format = TableExtractor._to_markdown(table_data)
+                            
+                            tables_info.append({
+                                "html": html_format,
+                                "markdown": markdown_format,
+                                "semantic": semantic_info
+                            })
+                        except Exception as e:
+                            logger.warning(f"表格格式化失败: {e}")
             
             if tables_text:
                 full_text += "\n\n" + "\n\n".join(tables_text)
@@ -220,16 +232,52 @@ class WordParser(BaseParser):
             except Exception as e:
                 logger.warning(f"公式分析失败: {e}")
             
-            # 增强功能：提取图片（Word文档中的图片）
+            # 增强功能：提取图片（Word文档中的图片）并对内嵌图做 OCR
             images_info = []
             try:
-                # 提取图片关系
+                import tempfile
                 for rel in doc.part.rels.values():
-                    if "image" in rel.target_ref:
-                        images_info.append({
-                            "target": rel.target_ref,
-                            "type": "embedded_image"
-                        })
+                    if "image" not in rel.target_ref:
+                        continue
+                    images_info.append({
+                        "target": rel.target_ref,
+                        "type": "embedded_image"
+                    })
+                    if ocr_enabled:
+                        # 内嵌图 OCR：获取 blob 写入临时文件后调用 image_ocr
+                        try:
+                            target_part = rel.target_part
+                            if target_part is None:
+                                continue
+                            type_name = type(target_part).__name__
+                            if "ImagePart" not in type_name and "Image" not in type_name:
+                                continue
+                            blob = getattr(target_part, "_blob", None) or getattr(target_part, "blob", None)
+                            if not blob:
+                                continue
+                            # 扩展名：从 target_ref 如 "media/image1.png" 或 partname 取
+                            ref = getattr(rel, "target_ref", "") or ""
+                            ext = os.path.splitext(ref)[1].lower() if ref else ".png"
+                            if ext not in (".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif", ".gif"):
+                                ext = ".png"
+                            fd, tmp_path = tempfile.mkstemp(suffix=ext)
+                            try:
+                                with os.fdopen(fd, "wb") as f:
+                                    f.write(blob)
+                                from utils.image_ocr import image_ocr
+                                ocr_result = image_ocr.extract_text_from_image(tmp_path)
+                                ocr_text = (ocr_result.get("text") or "").strip()
+                                if ocr_text:
+                                    full_text += "\n\n[图片文字]\n" + ocr_text
+                                if images_info:
+                                    images_info[-1]["ocr_text"] = ocr_text
+                            finally:
+                                try:
+                                    os.unlink(tmp_path)
+                                except Exception:
+                                    pass
+                        except Exception as img_e:
+                            logger.warning(f"Word 内嵌图 OCR 失败: {rel.target_ref}, {img_e}")
                 if images_info:
                     metadata["images"] = images_info
             except Exception as e:

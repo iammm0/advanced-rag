@@ -2,10 +2,34 @@
 from typing import Dict, Any, Optional
 import asyncio
 from utils.logger import logger
+from utils.token_utils import estimate_tokens, truncate_to_tokens
 
 
 class RAGService:
     """RAG服务封装（通过HTTP调用知识库服务）"""
+
+    def _dynamic_retrieval_params(self, query: str) -> Dict[str, int]:
+        """
+        在线动态调参（粗粒度启发式）：
+        - 行业报告允许更高延迟/大上下文，因此默认扩大 prefetch_k
+        - 对对比/多约束类问题适当增大 final_k
+        """
+        q = (query or "").strip()
+        q_len = len(q)
+        is_compare = any(k in q for k in ("对比", "比较", "差异", "优缺点", "优劣", "分别", "各自", "相同点", "不同点"))
+        is_list = any(k in q for k in ("有哪些", "列举", "总结", "概括", "要点", "关键点", "核心观点", "主要结论"))
+        is_clause = any(k in q for k in ("依据", "条款", "规定", "标准", "口径", "定义", "范围", "假设", "条件"))
+
+        prefetch_k = 200
+        final_k = 12
+
+        if q_len > 80 or is_compare or is_list:
+            final_k = 20
+        if is_clause:
+            prefetch_k = 260
+            final_k = max(final_k, 16)
+
+        return {"prefetch_k": prefetch_k, "final_k": final_k}
     
     async def retrieve_context(
         self,
@@ -32,6 +56,15 @@ class RAGService:
             包含上下文、来源信息和推荐资源的字典
         """
         from database.mongodb import mongodb
+        # 运行时开关：决定是否启用图谱检索/重排等高耗模块
+        try:
+            from services.runtime_config import get_runtime_config
+
+            runtime_cfg = await get_runtime_config()
+            modules = runtime_cfg.get("modules") or {}
+            rerank_enabled = bool(modules.get("rerank_enabled", True))
+        except Exception:
+            rerank_enabled = True
         # 解析需要检索的集合列表（知识空间优先）
         collection_names: list[str] = []
         if knowledge_space_ids:
@@ -66,7 +99,13 @@ class RAGService:
         
         # 文档检索任务（知识空间集合，可多集合并行）
         from retrieval.rag_retriever import RAGRetriever
-        doc_retriever = RAGRetriever(top_k=100, score_threshold=0.7)
+        dyn = self._dynamic_retrieval_params(query)
+        doc_retriever = RAGRetriever(
+            final_k=dyn["final_k"],
+            prefetch_k=dyn["prefetch_k"],
+            score_threshold=0.7,
+            enable_reranker=rerank_enabled,
+        )
         
         # 使用异步检索方法 (retrieve_async)
         doc_tasks = [
@@ -85,6 +124,14 @@ class RAGService:
         # 构建上下文和来源（包含文档信息）
         context_parts = []
         sources = []
+
+        # 邻居扩展：对命中 chunk 拉取前后窗口补齐定义/条件/例外
+        # 注意：图谱结果没有 chunk_index，不参与邻居扩展
+        from database.mongodb import ChunkRepository, mongodb_client
+        chunk_repo = ChunkRepository(mongodb_client)
+        neighbor_window = int((0 or 1))
+        seen_chunk_ids = set()
+        expanded_parts = []
         
         # 获取所有涉及的文档ID和文件ID（对话附件兼容）
         document_ids = set()
@@ -136,7 +183,26 @@ class RAGService:
         for result in results:
             text = result["payload"].get("text", "")
             if text:
+                # 先记录命中本体
                 context_parts.append(text)
+
+                chunk_id = result["payload"].get("chunk_id")
+                doc_id = result["payload"].get("document_id")
+                chunk_index = result["payload"].get("chunk_index")
+
+                # 邻居扩展（仅对普通文档 chunk 生效）
+                if chunk_id and doc_id is not None and chunk_index is not None and isinstance(chunk_index, int):
+                    if chunk_id not in seen_chunk_ids:
+                        seen_chunk_ids.add(chunk_id)
+                        try:
+                            neighbors = chunk_repo.get_neighbor_chunks(doc_id, chunk_index, window=neighbor_window)
+                            for nb in neighbors:
+                                nb_id = nb.get("_id")
+                                if nb_id and nb_id not in seen_chunk_ids:
+                                    seen_chunk_ids.add(nb_id)
+                                    expanded_parts.append(nb.get("text", ""))
+                        except Exception:
+                            pass
                 doc_id = result["payload"].get("document_id")
                 file_id = result["payload"].get("file_id")
                 conversation_id = result["payload"].get("conversation_id")
@@ -181,8 +247,17 @@ class RAGService:
         # 将去重后的来源转换为列表，并按分数排序
         sources = list(document_sources_map.values())
         sources.sort(key=lambda x: x["score"], reverse=True)
-        
-        context = "\n\n".join(context_parts)
+
+        # 拼接上下文：命中块 + 邻居补齐，并控制总 token 预算（行业报告允许更大窗口，但仍需上限）
+        all_parts = context_parts + expanded_parts
+        # 先去空
+        all_parts = [p for p in all_parts if isinstance(p, str) and p.strip()]
+        # 近似预算：默认 30k tokens，避免极端情况下 prompt 过大
+        max_context_tokens = int(30_000)
+        joined = "\n\n".join(all_parts)
+        if estimate_tokens(joined) > max_context_tokens:
+            joined = truncate_to_tokens(joined, max_context_tokens)
+        context = joined
         
         return {
             "context": context,

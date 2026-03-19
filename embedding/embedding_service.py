@@ -178,20 +178,74 @@ class EmbeddingService:
         last_exception = None
         
         target_model = model_name or self.ollama_model
+        text = "" if text is None else str(text)
+        # Ollama 对包含 \x00 的输入很容易报内部错误
+        if "\x00" in text:
+            text = text.replace("\x00", "")
+        # 过长文本会触发 Ollama "the input length exceeds the context length"
+        # 这里用更保守的字符截断，并允许用环境变量覆盖。
+        # 注意：不同语言/标点/空白对 token 的影响很大，字符数只是近似。
+        max_chars = int(os.getenv("OLLAMA_EMBEDDING_MAX_CHARS", "2000"))
+        if max_chars > 0 and len(text) > max_chars:
+            original_len = len(text)
+            text = text[:max_chars]
+            logger.warning(f"文本过长 ({original_len} 字符)，已截断至 {max_chars} 字符以避免 Ollama 超上下文错误")
+
+        def _raise_with_body(prefix: str, resp: requests.Response) -> None:
+            body = ""
+            try:
+                body_json = resp.json()
+                # Ollama 通常返回 {"error": "..."} 或类似结构
+                if isinstance(body_json, dict):
+                    body = body_json.get("error") or body_json.get("message") or str(body_json)
+                else:
+                    body = str(body_json)
+            except Exception:
+                try:
+                    body = (resp.text or "").strip()
+                except Exception:
+                    body = ""
+            detail = f"{prefix}HTTP {getattr(resp, 'status_code', 'unknown')}"
+            if body:
+                detail += f"，Ollama 返回: {body}"
+            raise Exception(detail)
+
+        def _parse_embedding(result: Dict[str, Any]) -> List[float]:
+            # 兼容不同返回结构：{"embedding":[...]} 或 {"embeddings":[[...]]}
+            if not isinstance(result, dict):
+                return []
+            emb = result.get("embedding")
+            if isinstance(emb, list) and emb and isinstance(emb[0], (int, float)):
+                return emb
+            embs = result.get("embeddings")
+            if isinstance(embs, list) and embs:
+                first = embs[0]
+                if isinstance(first, list) and first and isinstance(first[0], (int, float)):
+                    return first
+            return []
         
         for attempt in range(retry_count):
             try:
+                # 优先尝试新接口 /api/embed（更常见的字段是 input）
                 response = self.session.post(
-                    f"{self.ollama_base_url}/api/embeddings",
-                    json={
-                        "model": target_model,
-                        "prompt": text
-                    },
-                    timeout=120.0  # 增加超时时间到120秒
+                    f"{self.ollama_base_url}/api/embed",
+                    json={"model": target_model, "input": text},
+                    timeout=120.0
                 )
-                response.raise_for_status()
-                result = response.json()
-                embedding = result.get("embedding", [])
+                if not response.ok:
+                    # 回退到旧接口 /api/embeddings（字段 prompt）
+                    response2 = self.session.post(
+                        f"{self.ollama_base_url}/api/embeddings",
+                        json={"model": target_model, "prompt": text},
+                        timeout=120.0
+                    )
+                    if not response2.ok:
+                        _raise_with_body("Ollama 嵌入请求失败：", response2)
+                    result = response2.json()
+                else:
+                    result = response.json()
+
+                embedding = _parse_embedding(result)
                 
                 if not embedding:
                     raise Exception(f"Ollama 返回的嵌入向量为空，模型可能不支持 embedding: {self.ollama_model}")
@@ -223,6 +277,14 @@ class EmbeddingService:
                 if "model not found" in error_msg.lower():
                     logger.error(f"Ollama 模型未找到: {self.ollama_model}，请使用 'ollama pull {self.ollama_model}' 下载模型")
                 raise Exception(f"Ollama 嵌入请求失败: {e}")
+            except Exception as e:
+                last_exception = e
+                if attempt < retry_count - 1:
+                    wait_time = (attempt + 1) * 2
+                    logger.warning(f"Ollama 嵌入失败（尝试 {attempt + 1}/{retry_count}）：{e}，{wait_time}秒后重试...")
+                    time.sleep(wait_time)
+                else:
+                    raise
         
         # 所有重试都失败
         raise Exception(f"Ollama 嵌入请求失败（已重试 {retry_count} 次）: {last_exception}")
@@ -247,13 +309,6 @@ class EmbeddingService:
         target_model = model_name or self.ollama_model
         
         for text in texts:
-            # 截断过长的文本，避免 Ollama 500 错误
-            # 假设 context window 为 8192 tokens，粗略按 4 chars/token 计算，保留前 30000 字符
-            # 更安全的做法是截断到 8000 字符左右
-            if len(text) > 8000:
-                logger.warning(f"文本过长 ({len(text)} 字符)，已截断至 8000 字符以避免 Ollama 错误")
-                text = text[:8000]
-                
             embedding = self._get_ollama_embedding(text, model_name=target_model)
             embeddings.append(embedding)
         return embeddings

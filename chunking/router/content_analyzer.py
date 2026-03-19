@@ -5,6 +5,7 @@ from chunking.langchain.semantic_chunker import SemanticChunker
 from chunking.simple_chunker import SimpleChunker
 from chunking.smart_chunker import SmartChunker
 from chunking.hybrid_chunker import HybridChunker
+from chunking.report_chunker import ReportChunker
 from utils.logger import logger
 
 
@@ -17,6 +18,7 @@ class ContentAnalyzer:
     CHUNKER_TYPE_SMART = "smart"  # 智能分块器（包含公式、表格等）
     CHUNKER_TYPE_LEGACY = "legacy"  # 简单分块器（通用型）
     CHUNKER_TYPE_HYBRID = "hybrid"  # 混合分块器（规则+语义）
+    CHUNKER_TYPE_REPORT = "report"  # 行业报告分块器（结构 + token 预算）
     
     def __init__(self):
         """初始化内容分析器"""
@@ -25,6 +27,7 @@ class ContentAnalyzer:
         self.smart_chunker = None
         self.legacy_chunker = None
         self.hybrid_chunker = None
+        self.report_chunker = None
     
     def _get_recursive_chunker(self) -> RecursiveChunker:
         """获取 LangChain 递归分块器（延迟初始化）"""
@@ -68,6 +71,12 @@ class ContentAnalyzer:
                 semantic_threshold=0.5
             )
         return self.hybrid_chunker
+
+    def _get_report_chunker(self) -> ReportChunker:
+        """获取行业报告分块器（延迟初始化）"""
+        if self.report_chunker is None:
+            self.report_chunker = ReportChunker()
+        return self.report_chunker
     
     def _detect_highly_structured(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """
@@ -262,6 +271,13 @@ class ContentAnalyzer:
             logger.info("空文本，使用简单分块器")
             return self.CHUNKER_TYPE_LEGACY, self._get_legacy_chunker()
         
+        # 0. 超长报告优先：结构 + token 预算分块
+        # 行业报告通常章节明显、文本极长，用 report chunker 能提升语义完整性与可控性
+        text_length = len(text)
+        if text_length >= 100_000:
+            logger.info(f"✓ 检测到超长文档 ({text_length} 字符)，使用行业报告分块器")
+            return self.CHUNKER_TYPE_REPORT, self._get_report_chunker()
+
         # 1. 检测高度结构化内容 -> LangChain 递归分块器
         # （优先级最高，因为代码和论文需要精确的结构化分块）
         if self._detect_highly_structured(text, metadata):

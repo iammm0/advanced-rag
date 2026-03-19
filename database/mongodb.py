@@ -187,6 +187,11 @@ class MongoDB:
         """关闭连接"""
         if self.client:
             self.client.close()
+
+    async def ensure_connected(self):
+        """若未连接则建立连接（用于请求级兜底，启动时连接失败后首次请求可重试）"""
+        if self.db is None:
+            await self.connect()
     
     def get_collection(self, collection_name: str) -> AsyncIOMotorCollection:
         """获取集合"""
@@ -197,6 +202,24 @@ class MongoDB:
 
 # 全局数据库实例
 mongodb = MongoDB()
+
+
+async def require_mongodb():
+    """
+    供 FastAPI Depends 使用：确保 MongoDB 已连接。
+    启动时若连接失败，在首次请求时会重试一次；若仍失败则返回 503。
+    """
+    if mongodb.db is None:
+        try:
+            await mongodb.ensure_connected()
+        except Exception as e:
+            from utils.logger import logger
+            logger.error(f"MongoDB 连接失败: {e}")
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=503,
+                detail="数据库暂时不可用，请稍后重试。请确认 MongoDB 已启动且 .env 配置正确。",
+            )
 
 
 def get_user_collection() -> AsyncIOMotorCollection:
@@ -800,6 +823,34 @@ class ChunkRepository:
         """获取文档的所有块"""
         chunks = self.collection.find({"document_id": document_id}).sort("chunk_index", 1)
         return [{**chunk, "_id": str(chunk["_id"])} for chunk in chunks]
+
+    def get_chunk_by_id(self, chunk_id: str) -> Optional[Dict[str, Any]]:
+        """按 chunk_id 获取单个块（用于邻居扩展）"""
+        try:
+            from bson import ObjectId
+            doc = self.collection.find_one({"_id": ObjectId(chunk_id)})
+            if not doc:
+                return None
+            return {**doc, "_id": str(doc["_id"])}
+        except Exception:
+            return None
+
+    def get_chunks_by_indices(self, document_id: str, indices: List[int]) -> List[Dict[str, Any]]:
+        """按 chunk_index 列表批量获取块（用于邻居扩展）"""
+        if not indices:
+            return []
+        docs = self.collection.find({"document_id": document_id, "chunk_index": {"$in": indices}})
+        # 返回顺序按 chunk_index 排序，方便拼上下文
+        items = [{**d, "_id": str(d["_id"])} for d in docs]
+        items.sort(key=lambda x: x.get("chunk_index", 0))
+        return items
+
+    def get_neighbor_chunks(self, document_id: str, chunk_index: int, window: int = 1) -> List[Dict[str, Any]]:
+        """获取指定 chunk 的前后邻居块（含自身）"""
+        start = max(0, int(chunk_index) - int(window))
+        end = int(chunk_index) + int(window)
+        indices = list(range(start, end + 1))
+        return self.get_chunks_by_indices(document_id, indices)
     
     def delete_chunks_by_document(self, document_id: str):
         """删除文档的所有块"""

@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 import os
 from dotenv import load_dotenv
-from routers import chat, documents, retrieval, assistants, health, knowledge_spaces
+from routers import chat, documents, retrieval, assistants, health, knowledge_spaces, settings
 from utils.logger import logger
 from utils.lifespan import lifespan
 from middleware.logging_middleware import log_requests
@@ -94,6 +94,7 @@ app.include_router(documents.router, prefix="/api/documents", tags=["文档管�
 app.include_router(retrieval.router, prefix="/api/retrieval", tags=["检索服务"])
 app.include_router(assistants.router, prefix="/api/assistants", tags=["助手"])
 app.include_router(knowledge_spaces.router, prefix="/api/knowledge-spaces", tags=["知识空间"])
+app.include_router(settings.router, prefix="/api/settings", tags=["设置"])
 app.include_router(health.router, tags=["健康检查"])
 
 
@@ -131,6 +132,8 @@ if __name__ == "__main__":
     # 根据环境显示不同的服务地址
     is_production = env_mode == "production"
     
+    host = os.getenv("HOST", "0.0.0.0")
+
     # 只显示环境信息和使用的环境变量文件
     env_name = "生产环境" if is_production else "开发环境"
     print(f"\n环境: {env_name}")
@@ -143,11 +146,22 @@ if __name__ == "__main__":
         print(f"Worker数量: {workers}")
     else:
         workers = 1  # 开发环境单worker，支持reload
+
+    # 初始化启动日志：明确监听端口/地址
+    try:
+        logger.info(
+            f"服务启动参数 - 环境: {env_name}, 监听: {host}:{port}, "
+            f"workers: {workers if is_production else 1}, reload: {not is_production}, "
+            f"env_file: {loaded_file}"
+        )
+    except Exception:
+        # 避免日志系统异常影响启动
+        pass
     
     # 生产环境不启用reload，开发环境启用
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host=host,
         port=port,
         workers=workers if is_production else None,  # 生产环境使用多worker
         reload=not is_production,  # 生产环境禁用reload

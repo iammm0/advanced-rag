@@ -4,10 +4,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 
-from database.mongodb import mongodb
+from database.mongodb import mongodb, require_mongodb
 from utils.logger import logger
 
 
@@ -38,7 +38,11 @@ class AssistantListResponse(BaseModel):
 
 
 @router.get("", response_model=AssistantListResponse)
-async def list_assistants(skip: int = 0, limit: int = 100):
+async def list_assistants(
+    skip: int = 0,
+    limit: int = 100,
+    _: None = Depends(require_mongodb),
+):
     """获取助手列表（匿名模式，只读）"""
     logger.info(f"获取助手列表请求 - skip: {skip}, limit: {limit}")
     try:
@@ -80,7 +84,10 @@ async def list_assistants(skip: int = 0, limit: int = 100):
 
 
 @router.get("/{assistant_id}", response_model=AssistantResponse)
-async def get_assistant(assistant_id: str):
+async def get_assistant(
+    assistant_id: str,
+    _: None = Depends(require_mongodb),
+):
     """获取助手详情（匿名模式，只读）"""
     logger.info(f"获取助手详情请求 - assistant_id: {assistant_id}")
     try:

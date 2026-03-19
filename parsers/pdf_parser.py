@@ -104,6 +104,17 @@ class PDFParser(BaseParser):
         """解析PDF文件（自动检测文本版或扫描版，增强版：支持图片OCR、表格提取、公式分析）"""
         text_content = []
         metadata = {}
+        # 运行时开关（同步解析路径）
+        try:
+            from services.runtime_config import get_runtime_config_sync
+
+            _cfg = get_runtime_config_sync()
+            _modules = _cfg.get("modules") or {}
+            ocr_enabled = bool(_modules.get("ocr_image_enabled", True))
+            table_enabled = bool(_modules.get("table_parse_enabled", True))
+        except Exception:
+            ocr_enabled = True
+            table_enabled = True
         
         try:
             # 首先尝试使用PyPDF2提取文本（文本版PDF）
@@ -125,17 +136,18 @@ class PDFParser(BaseParser):
                 
                 # 增强功能：提取图片OCR文字
                 image_ocr_text = ""
-                try:
-                    from utils.image_ocr import image_ocr
-                    ocr_result = image_ocr.extract_text_from_pdf_images(file_path)
-                    if ocr_result.get("total_text"):
-                        image_ocr_text = ocr_result["total_text"]
-                        metadata["image_ocr"] = {
-                            "image_count": ocr_result.get("image_count", 0),
-                            "ocr_text_length": len(image_ocr_text)
-                        }
-                except Exception as e:
-                    logger.warning(f"PDF图片OCR失败: {e}")
+                if ocr_enabled:
+                    try:
+                        from utils.image_ocr import image_ocr
+                        ocr_result = image_ocr.extract_text_from_pdf_images(file_path)
+                        if ocr_result.get("total_text"):
+                            image_ocr_text = ocr_result["total_text"]
+                            metadata["image_ocr"] = {
+                                "image_count": ocr_result.get("image_count", 0),
+                                "ocr_text_length": len(image_ocr_text)
+                            }
+                    except Exception as e:
+                        logger.warning(f"PDF图片OCR失败: {e}")
                 
                 for page_num, page in enumerate(pdf_reader.pages):
                     try:
@@ -164,20 +176,21 @@ class PDFParser(BaseParser):
                 
                 # 增强功能：提取表格
                 tables_info = []
-                try:
-                    from utils.table_extractor import TableExtractor
-                    tables = TableExtractor.extract_table_from_text(full_text)
-                    for table in tables:
-                        tables_info.append({
-                            "type": table.get("type"),
-                            "html": table.get("html"),
-                            "markdown": table.get("markdown"),
-                            "semantic": TableExtractor.extract_semantic_structure(table.get("data", []))
-                        })
-                    if tables_info:
-                        metadata["tables"] = tables_info
-                except Exception as e:
-                    logger.warning(f"表格提取失败: {e}")
+                if table_enabled:
+                    try:
+                        from utils.table_extractor import TableExtractor
+                        tables = TableExtractor.extract_table_from_text(full_text)
+                        for table in tables:
+                            tables_info.append({
+                                "type": table.get("type"),
+                                "html": table.get("html"),
+                                "markdown": table.get("markdown"),
+                                "semantic": TableExtractor.extract_semantic_structure(table.get("data", []))
+                            })
+                        if tables_info:
+                            metadata["tables"] = tables_info
+                    except Exception as e:
+                        logger.warning(f"表格提取失败: {e}")
                 
                 # 增强功能：分析公式
                 formulas_info = []

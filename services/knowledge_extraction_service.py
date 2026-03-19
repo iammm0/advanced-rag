@@ -2,6 +2,8 @@
 import json
 import re
 import asyncio
+import os
+import time
 from typing import List, Dict, Any
 from services.ollama_service import OllamaService
 from database.neo4j_client import neo4j_client
@@ -13,6 +15,8 @@ class KnowledgeExtractionService:
     def __init__(self):
         """初始化知识抽取服务"""
         self.ollama_service = OllamaService()
+        # Neo4j 连接失败时做冷却，避免每个 chunk 都刷错误日志
+        self._neo4j_disabled_until_ts = 0.0
         self.extraction_prompt_template = """
 你是一个知识图谱专家。请从以下文本中提取“实体-关系-实体”三元组。
 请严格按照 JSON 格式返回结果，不要包含任何其他解释性文字。
@@ -40,27 +44,26 @@ class KnowledgeExtractionService:
             三元组列表，每个三元组是一个字典
         """
         prompt = self.extraction_prompt_template.format(text=text)
-        
-        try:
-            # 使用 Ollama 生成
-            # 我们直接调用 API 以避免 OllamaService 的 prompt 包装
+
+        def _sync_call_ollama() -> str:
             response = self.ollama_service.session.post(
                 f"{self.ollama_service.base_url}/api/generate",
                 json={
                     "model": self.ollama_service.model_name,
                     "prompt": prompt,
                     "stream": False,
-                    "format": "json"  # 强制 JSON 输出
+                    "format": "json",  # 强制 JSON 输出
                 },
-                timeout=120
+                timeout=120,
             )
             response.raise_for_status()
             result = response.json()
-            content = result.get("response", "")
-            
-            # 解析 JSON
-            triplets = self._parse_json(content)
-            return triplets
+            return result.get("response", "")
+
+        try:
+            # requests 是同步 IO：放到线程中，避免阻塞事件循环导致“进度卡死”
+            content = await asyncio.to_thread(_sync_call_ollama)
+            return self._parse_json(content)
         except Exception as e:
             logger.error(f"知识抽取失败: {e}")
             return []
@@ -149,10 +152,22 @@ class KnowledgeExtractionService:
             text: 输入文本
             metadata: 元数据（包含文档ID等）
         """
+        # 支持通过环境变量一键关闭图谱构建
+        neo4j_enabled = os.getenv("NEO4J_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
+        if not neo4j_enabled:
+            return
+
+        # 连接失败冷却
+        now = time.time()
+        if now < self._neo4j_disabled_until_ts:
+            return
+
         if not neo4j_client.driver:
             neo4j_client.connect()
             if not neo4j_client.driver:
-                logger.warning("Neo4j 未连接，跳过图谱构建")
+                # 连接失败后冷却 5 分钟，避免刷屏
+                self._neo4j_disabled_until_ts = now + 300
+                logger.warning("Neo4j 未连接，已跳过图谱构建（将于 5 分钟后重试）")
                 return
 
         triplets = await self.extract_triplets(text)
@@ -173,9 +188,9 @@ class KnowledgeExtractionService:
                 if not head or not tail or not relation:
                     continue
 
-                # 创建节点
-                neo4j_client.create_entity(head_type, {"name": head})
-                neo4j_client.create_entity(tail_type, {"name": tail})
+                # Neo4j Python Driver 的 session.run 是同步 IO，放线程中避免阻塞
+                await asyncio.to_thread(neo4j_client.create_entity, head_type, {"name": head})
+                await asyncio.to_thread(neo4j_client.create_entity, tail_type, {"name": tail})
 
                 # 创建关系
                 rel_props = {}
@@ -184,11 +199,14 @@ class KnowledgeExtractionService:
                 if chunk_id:
                     rel_props["source_chunk"] = chunk_id
                 
-                neo4j_client.create_relationship(
-                    head, head_type,
-                    tail, tail_type,
+                await asyncio.to_thread(
+                    neo4j_client.create_relationship,
+                    head,
+                    head_type,
+                    tail,
+                    tail_type,
                     self._normalize_relation(relation),
-                    rel_props
+                    rel_props,
                 )
             except Exception as e:
                 logger.error(f"图谱构建错误 (triplet: {triplet}): {e}")

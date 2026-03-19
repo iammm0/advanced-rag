@@ -6,11 +6,11 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, HTTPException, status, UploadFile, File, BackgroundTasks, Form, Request
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, BackgroundTasks, Form, Request, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from database.mongodb import mongodb
+from database.mongodb import mongodb, require_mongodb
 from utils.logger import logger
 from utils.timezone import beijing_now
 
@@ -96,7 +96,8 @@ async def list_models():
 
 @router.post("/conversations")
 async def create_conversation(
-    request: ConversationCreate
+    request: ConversationCreate,
+    _: None = Depends(require_mongodb),
 ):
     """
     创建新对话
@@ -152,6 +153,7 @@ async def create_conversation(
 async def list_conversations(
     skip: int = 0,
     limit: int = 100,
+    _: None = Depends(require_mongodb),
 ):
     """
     获取对话列表
@@ -195,6 +197,7 @@ async def list_conversations(
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(
     conversation_id: str,
+    _: None = Depends(require_mongodb),
 ):
     """
     获取对话详情（包含所有消息）
@@ -246,6 +249,7 @@ async def get_conversation(
 async def add_message(
     conversation_id: str,
     message: MessageAdd,
+    _: None = Depends(require_mongodb),
 ):
     """
     向对话添加消息（匿名模式）
@@ -351,6 +355,7 @@ async def add_message(
 async def update_conversation(
     conversation_id: str,
     request: ConversationUpdate,
+    _: None = Depends(require_mongodb),
 ):
     """
     更新对话（目前仅支持更新标题，匿名模式）
@@ -408,6 +413,7 @@ async def update_conversation(
 @router.delete("/conversations/{conversation_id}")
 async def delete_conversation(
     conversation_id: str,
+    _: None = Depends(require_mongodb),
 ):
     """
     删除对话（匿名模式）
@@ -454,6 +460,7 @@ async def update_message(
     conversation_id: str,
     message_id: str,
     request: MessageUpdate,
+    _: None = Depends(require_mongodb),
 ):
     """
     编辑用户消息（匿名模式）
@@ -535,6 +542,7 @@ async def update_message(
 async def regenerate_response(
     conversation_id: str,
     message_id: str,
+    _: None = Depends(require_mongodb),
 ):
     """
     重新生成回答（匿名模式）
@@ -616,6 +624,7 @@ async def regenerate_response(
 async def chat(
     chat_request: ChatRequest,
     http_request: Request,
+    _: None = Depends(require_mongodb),
 ) -> StreamingResponse:
     """
     常规对话（匿名模式）
@@ -754,6 +763,7 @@ async def chat(
 async def deep_research_chat(
     research_request: DeepResearchRequest,
     http_request: Request,
+    _: None = Depends(require_mongodb),
 ) -> StreamingResponse:
     """
     深度研究模式
@@ -941,6 +951,8 @@ async def update_attachment_status(
 ):
     """更新附件处理状态"""
     try:
+        if mongodb.db is None:
+            await mongodb.ensure_connected()
         collection = mongodb.get_collection("conversation_attachments")
         update_data = {
             "status": status,
@@ -1099,6 +1111,7 @@ async def upload_conversation_attachment(
     file: UploadFile = File(...),
     conversation_id: str = Form(...),
     knowledge_space_id: str = Form(...),
+    _: None = Depends(require_mongodb),
 ):
     """
     上传对话附件
@@ -1138,13 +1151,17 @@ async def upload_conversation_attachment(
     logger.info(f"对话附件上传请求 - 对话ID: {conversation_id}, 文件名: {file.filename}")
     
     # 检查文件类型
-    allowed_extensions = {".pdf", ".docx", ".doc", ".md", ".txt", ".markdown"}
+    allowed_extensions = {
+        ".pdf", ".docx", ".doc", ".md", ".txt", ".markdown",
+        ".pptx", ".xlsx", ".xls", ".html", ".htm",
+        ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif",
+    }
     file_ext = os.path.splitext(file.filename)[1].lower()
-    
+
     if file_ext not in allowed_extensions:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的文件类型: {file_ext}。支持的类型: PDF, Word (.doc/.docx), Markdown, TXT"
+            detail=f"不支持的文件类型: {file_ext}。支持的类型: PDF, Word (.doc/.docx), Markdown, TXT, PowerPoint (.pptx), Excel (.xlsx/.xls), HTML, 图片 (.jpg/.png/.bmp/.webp/.tiff)"
         )
     
     # 生成文件ID
@@ -1253,6 +1270,7 @@ async def upload_conversation_attachment(
 async def get_conversation_attachment_status(
     conversation_id: str,
     file_id: str,
+    _: None = Depends(require_mongodb),
 ):
     """
     获取对话附件的处理状态
