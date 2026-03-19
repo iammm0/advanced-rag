@@ -17,7 +17,17 @@
 - [rag_service.py](file://services/rag_service.py)
 - [agent_config.py](file://models/agent_config.py)
 - [monitoring.py](file://utils/monitoring.py)
+- [ai_tools.py](file://services/ai_tools.py)
+- [ollama_service.py](file://services/ollama_service.py)
+- [mongodb.py](file://database/mongodb.py)
 </cite>
+
+## 更新摘要
+**变更内容**
+- 新增AI工具服务架构改进章节，重点介绍async_call_tool异步执行方法
+- 增强_call_filter_tool_arguments参数验证机制的详细说明
+- 改进工具函数名验证机制，防止placeholder值传递的安全措施
+- 更新工具服务的异步处理和参数过滤最佳实践
 
 ## 目录
 1. [简介](#简介)
@@ -25,14 +35,15 @@
 3. [核心组件](#核心组件)
 4. [架构总览](#架构总览)
 5. [详细组件分析](#详细组件分析)
-6. [依赖分析](#依赖分析)
-7. [性能考虑](#性能考虑)
-8. [故障排除指南](#故障排除指南)
-9. [结论](#结论)
-10. [附录](#附录)
+6. [AI工具服务架构改进](#ai工具服务架构改进)
+7. [依赖分析](#依赖分析)
+8. [性能考虑](#性能考虑)
+9. [故障排除指南](#故障排除指南)
+10. [结论](#结论)
+11. [附录](#附录)
 
 ## 简介
-本项目是一个基于多代理协作的AI研究与问答系统，采用“协调型代理 + 专家代理”的分层架构。用户输入的问题首先由协调型代理进行任务规划，智能选择所需的专家代理，随后由工作流编排器顺序调度各专家代理执行任务，最终汇总结果并以流式方式返回。系统支持多种专家代理，涵盖概念解释、文档检索、公式分析、代码分析、示例生成、批判性分析、总结等能力，并提供完善的流式响应、错误处理与性能监控。
+本项目是一个基于多代理协作的AI研究与问答系统，采用"协调型代理 + 专家代理"的分层架构。用户输入的问题首先由协调型代理进行任务规划，智能选择所需的专家代理，随后由工作流编排器顺序调度各专家代理执行任务，最终汇总结果并以流式方式返回。系统支持多种专家代理，涵盖概念解释、文档检索、公式分析、代码分析、示例生成、批判性分析、总结等能力，并提供完善的流式响应、错误处理与性能监控。
 
 ## 项目结构
 系统采用模块化组织，核心目录与职责如下：
@@ -44,6 +55,7 @@
   - tools：LangChain工具适配
 - services：服务层
   - rag_service：RAG检索与上下文生成
+  - ai_tools：AI工具函数库，提供异步执行能力
 - models：配置与数据模型
 - utils：工具与监控
 - routers：API路由
@@ -69,10 +81,13 @@ TOOL["agents/tools/rag_tool.py"]
 end
 subgraph "服务层"
 RAG["services/rag_service.py"]
+AITOOLS["services/ai_tools.py"]
+OLLAMA["services/ollama_service.py"]
 end
 subgraph "工具与模型"
 CFG["models/agent_config.py"]
 MON["utils/monitoring.py"]
+DB["database/mongodb.py"]
 end
 MAIN --> WF
 WF --> COORD
@@ -96,6 +111,8 @@ EXP6 --> BASE
 EXP7 --> BASE
 WF --> CFG
 MAIN --> MON
+AITOOLS --> DB
+OLLAMA --> AITOOLS
 ```
 
 **图表来源**
@@ -109,6 +126,9 @@ MAIN --> MON
 - [rag_tool.py:1-58](file://agents/tools/rag_tool.py#L1-L58)
 - [agent_config.py:1-24](file://models/agent_config.py#L1-L24)
 - [monitoring.py:1-185](file://utils/monitoring.py#L1-L185)
+- [ai_tools.py:1-498](file://services/ai_tools.py#L1-L498)
+- [ollama_service.py:346-451](file://services/ollama_service.py#L346-L451)
+- [mongodb.py:1-800](file://database/mongodb.py#L1-L800)
 
 **章节来源**
 - [main.py:1-157](file://main.py#L1-L157)
@@ -131,6 +151,8 @@ MAIN --> MON
   - 并行检索文档与资源，构建上下文与来源信息，支持回退策略
 - LangChain工具（RAGTool）
   - 提供同步与异步检索工具，适配LangChain链路
+- AI工具服务（AITools）
+  - 提供异步工具函数调用，增强参数验证机制，防止占位符传递
 - 配置模型（AgentConfig）
   - 定义单个代理的推理与嵌入模型配置
 - 性能监控（PerformanceMonitor）
@@ -142,11 +164,12 @@ MAIN --> MON
 - [agent_workflow.py:1-388](file://agents/workflow/agent_workflow.py#L1-L388)
 - [rag_service.py:1-248](file://services/rag_service.py#L1-L248)
 - [rag_tool.py:1-58](file://agents/tools/rag_tool.py#L1-L58)
+- [ai_tools.py:1-498](file://services/ai_tools.py#L1-L498)
 - [agent_config.py:1-24](file://models/agent_config.py#L1-L24)
 - [monitoring.py:1-185](file://utils/monitoring.py#L1-L185)
 
 ## 架构总览
-系统采用“协调-执行-汇总”的三层协作模式：
+系统采用"协调-执行-汇总"的三层协作模式：
 - 协调层：CoordinatorAgent接收用户问题，生成专家选择与任务分配
 - 执行层：AgentWorkflow顺序调度专家代理，实时推送状态与中间结果
 - 汇总层：专家代理输出整合为最终回答，支持流式增量展示
@@ -372,14 +395,126 @@ BuildCtx --> Return["返回上下文/来源/推荐资源"]
 - [agent_config.py:1-24](file://models/agent_config.py#L1-L24)
 - [main.py:90-126](file://main.py#L90-L126)
 
+## AI工具服务架构改进
+
+### 异步执行方法（async_call_tool）
+AI工具服务新增了强大的异步执行能力，专门解决在事件循环环境中调用含MongoDB的工具函数时可能出现的跨循环问题。
+
+#### 核心特性
+- **事件循环安全**：避免在已运行的事件循环中使用`asyncio.run`导致的Motor跨循环错误
+- **混合执行模式**：区分纯同步工具和需要异步MongoDB访问的工具
+- **线程池支持**：纯同步工具在独立线程池中执行，避免阻塞事件循环
+
+#### 执行策略
+```mermaid
+flowchart TD
+Start(["async_call_tool调用"]) --> CheckName{"工具名称有效?"}
+CheckName --> |否| Error["抛出未知工具错误"]
+CheckName --> |是| FilterArgs["参数过滤与验证"]
+FilterArgs --> CheckAsync{"是否异步工具?"}
+CheckAsync --> |是| DirectAsync["直接异步调用"]
+CheckAsync --> |否| ThreadExec["线程池执行"]
+DirectAsync --> Success["返回结果"]
+ThreadExec --> Success
+Error --> End(["结束"])
+Success --> End
+```
+
+**图表来源**
+- [ai_tools.py:155-195](file://services/ai_tools.py#L155-L195)
+
+#### 异步工具映射
+系统将需要MongoDB异步访问的工具明确标识：
+- `get_knowledge_base_documents` → `_aget_knowledge_base_documents`
+- `get_system_info` → `_aget_system_info`
+- `get_knowledge_base_stats` → `_aget_knowledge_base_stats`
+
+**章节来源**
+- [ai_tools.py:155-195](file://services/ai_tools.py#L155-L195)
+
+### 增强的参数验证机制
+`_call_filter_tool_arguments`方法经过重大改进，提供了更严格的参数验证和占位符过滤机制。
+
+#### 参数过滤策略
+- **Schema驱动验证**：仅保留工具Schema中声明的参数
+- **占位符防护**：过滤模型误传的占位符参数（如"参数名"、"参数值"）
+- **类型安全**：确保传递给工具函数的参数符合预期类型
+
+#### 安全验证规则
+```mermaid
+flowchart TD
+Input["工具调用参数"] --> CheckEmpty{"参数为空?"}
+CheckEmpty --> |是| ReturnEmpty["返回空字典"]
+CheckEmpty --> |否| GetSchema["获取工具Schema"]
+GetSchema --> ExtractAllowed["提取允许的参数属性"]
+ExtractAllowed --> FilterParams["过滤参数：仅保留允许的键"]
+FilterParams --> ValidateValues["验证参数值类型"]
+ValidateValues --> ReturnFiltered["返回过滤后的参数"]
+ReturnEmpty --> End(["结束"])
+ReturnFiltered --> End
+```
+
+**图表来源**
+- [ai_tools.py:122-131](file://services/ai_tools.py#L122-L131)
+
+**章节来源**
+- [ai_tools.py:122-131](file://services/ai_tools.py#L122-L131)
+
+### 工具函数名验证机制
+系统新增了严格的安全验证机制，防止AI模型传递占位符值作为工具函数名称。
+
+#### 验证规则
+- **占位符检测**：识别常见的占位符字符串（"工具函数名称"、"function_name"、"tool_name"等）
+- **动态注入保护**：防止恶意或误用的占位符名称
+- **智能回退**：对无效名称提供友好的错误信息
+
+#### 验证流程
+```mermaid
+flowchart TD
+ToolName["工具函数名称"] --> CheckValid{"名称有效?"}
+CheckValid --> |否| LogWarning["记录警告日志"]
+CheckValid --> |是| CheckExists{"工具存在?"}
+LogWarning --> ReturnError["返回占位符错误"]
+CheckExists --> |否| LogUnknown["记录未知工具警告"]
+CheckExists --> |是| Proceed["继续执行"]
+LogUnknown --> ReturnUnknown["返回未知工具错误"]
+Proceed --> End(["结束"])
+ReturnError --> End
+ReturnUnknown --> End
+```
+
+**图表来源**
+- [ollama_service.py:369-392](file://services/ollama_service.py#L369-L392)
+
+**章节来源**
+- [ollama_service.py:369-392](file://services/ollama_service.py#L369-L392)
+
+### 异步工具实现
+针对需要MongoDB访问的工具函数，系统提供了专门的异步实现：
+
+#### 异步工具列表
+- `_aget_knowledge_base_documents`：异步获取知识库文档列表
+- `_aget_system_info`：异步获取系统基本信息
+- `_aget_knowledge_base_stats`：异步获取知识库统计信息
+
+#### 异步执行优势
+- **事件循环友好**：完全兼容现有的事件循环环境
+- **性能优化**：避免线程切换开销
+- **错误隔离**：异步异常不会影响主事件循环
+
+**章节来源**
+- [ai_tools.py:268-492](file://services/ai_tools.py#L268-L492)
+
 ## 依赖分析
 - 组件耦合
   - 工作流编排器依赖协调型代理与各专家代理，形成清晰的控制流
   - 专家代理依赖基类与RAG服务，体现高内聚低耦合
   - RAG服务与数据库、检索器存在间接耦合，通过服务封装隔离
+  - AI工具服务与MongoDB数据库直接耦合，提供异步访问能力
 - 外部依赖
   - LLM服务（OllamaService）通过基类统一调用
   - LangChain工具用于链路集成
+  - MongoDB驱动（Motor）提供异步数据库访问
 - 循环依赖
   - 未发现直接循环导入；编排器通过字符串映射延迟实例化专家代理
 
@@ -391,6 +526,8 @@ EXP --> BASE["BaseAgent"]
 EXP --> RAG["RAGService"]
 COORD --> BASE
 TOOL["RAGTool"] --> RAG
+AITOOLS["AITools"] --> DB["MongoDB"]
+OLLAMA["OllamaService"] --> AITOOLS
 ```
 
 **图表来源**
@@ -399,10 +536,16 @@ TOOL["RAGTool"] --> RAG
 - [base_agent.py:8-25](file://agents/base/base_agent.py#L8-L25)
 - [rag_service.py:7-248](file://services/rag_service.py#L7-L248)
 - [rag_tool.py:12-58](file://agents/tools/rag_tool.py#L12-L58)
+- [ai_tools.py:11-18](file://services/ai_tools.py#L11-L18)
+- [ollama_service.py:357](file://services/ollama_service.py#L357)
+- [mongodb.py:92-199](file://database/mongodb.py#L92-L199)
 
 **章节来源**
 - [agent_workflow.py:1-388](file://agents/workflow/agent_workflow.py#L1-L388)
 - [rag_service.py:1-248](file://services/rag_service.py#L1-L248)
+- [ai_tools.py:1-498](file://services/ai_tools.py#L1-L498)
+- [ollama_service.py:346-451](file://services/ollama_service.py#L346-L451)
+- [mongodb.py:1-800](file://database/mongodb.py#L1-L800)
 
 ## 性能考虑
 - 流式输出
@@ -411,6 +554,10 @@ TOOL["RAGTool"] --> RAG
   - RAG服务对多集合并行检索，显著缩短上下文准备时间
 - 进度估算
   - 工作流对中间阶段进行进度估算，提升交互体验
+- 异步工具执行
+  - AI工具服务的异步执行避免了线程阻塞，提升了并发性能
+- 参数过滤优化
+  - 增强的参数验证减少了无效调用，提高系统稳定性
 - 监控与告警
   - 性能监控器记录请求耗时、错误率与系统指标，慢请求自动告警
   - 装饰器与上下文管理器简化埋点
@@ -418,6 +565,7 @@ TOOL["RAGTool"] --> RAG
 **章节来源**
 - [agent_workflow.py:218-296](file://agents/workflow/agent_workflow.py#L218-L296)
 - [rag_service.py:64-83](file://services/rag_service.py#L64-L83)
+- [ai_tools.py:155-195](file://services/ai_tools.py#L155-L195)
 - [monitoring.py:118-185](file://utils/monitoring.py#L118-L185)
 
 ## 故障排除指南
@@ -433,15 +581,23 @@ TOOL["RAGTool"] --> RAG
 - 工具执行异常
   - 现象：同步工具在异步环境中报错
   - 排查：优先使用异步执行方法，避免在无事件循环时阻塞
+- 异步工具调用失败
+  - 现象：事件循环中调用含MongoDB的工具函数报错
+  - 排查：使用`async_call_tool`替代`call_tool`，确保正确的异步执行
+- 参数验证失败
+  - 现象：工具调用被拒绝或返回占位符错误
+  - 排查：检查工具名称是否为实际的有效名称，避免使用占位符
 
 **章节来源**
 - [coordinator_agent.py:130-135](file://agents/coordinator/coordinator_agent.py#L130-L135)
 - [agent_workflow.py:306-322](file://agents/workflow/agent_workflow.py#L306-L322)
 - [rag_service.py:225-236](file://services/rag_service.py#L225-L236)
 - [rag_tool.py:27-41](file://agents/tools/rag_tool.py#L27-L41)
+- [ai_tools.py:132-154](file://services/ai_tools.py#L132-L154)
+- [ollama_service.py:369-392](file://services/ollama_service.py#L369-L392)
 
 ## 结论
-本系统通过“协调-执行-汇总”的多代理架构，实现了对复杂问题的智能分解与协同求解。协调型代理负责任务规划，工作流编排器负责执行与聚合，专家代理聚焦各自专业领域，RAG服务提供高质量上下文。系统具备良好的扩展性与可观测性，适合在教育、科研与知识服务场景中部署与演进。
+本系统通过"协调-执行-汇总"的多代理架构，实现了对复杂问题的智能分解与协同求解。协调型代理负责任务规划，工作流编排器负责执行与聚合，专家代理聚焦各自专业领域，RAG服务提供高质量上下文。AI工具服务的架构改进进一步增强了系统的安全性、性能和可靠性，特别是异步执行能力和参数验证机制的引入，为复杂的多代理协作提供了坚实的技术基础。系统具备良好的扩展性与可观测性，适合在教育、科研与知识服务场景中部署与演进。
 
 ## 附录
 
@@ -467,10 +623,15 @@ TOOL["RAGTool"] --> RAG
 - 工作流配置
   - generation_config：包含llm_model等生成参数
   - enabled_agents：手动指定启用的专家代理列表
+- AI工具配置
+  - 异步工具调用：`async_call_tool`方法
+  - 参数验证：自动过滤无效参数
+  - 工具函数名验证：防止占位符传递
 
 **章节来源**
 - [agent_config.py:6-23](file://models/agent_config.py#L6-L23)
 - [agent_workflow.py:127-128](file://agents/workflow/agent_workflow.py#L127-L128)
+- [ai_tools.py:122-195](file://services/ai_tools.py#L122-L195)
 
 ### 代理扩展开发指南
 - 新增专家代理步骤
@@ -478,6 +639,10 @@ TOOL["RAGTool"] --> RAG
   - 在AgentWorkflow的AGENT_MAP中注册映射
   - 如需RAG检索，在execute中调用rag_service.retrieve_context
   - 支持流式输出：在execute中按chunk产出中间结果
+- AI工具集成最佳实践
+  - 优先使用异步工具调用，避免阻塞事件循环
+  - 利用参数验证机制，确保传递给工具的参数有效
+  - 实现工具函数名验证，防止占位符传递
 - 最佳实践
   - 明确代理职责边界，避免过度耦合
   - 提供清晰的系统提示词与任务描述
@@ -487,3 +652,5 @@ TOOL["RAGTool"] --> RAG
 - [base_agent.py:27-55](file://agents/base/base_agent.py#L27-L55)
 - [agent_workflow.py:50-104](file://agents/workflow/agent_workflow.py#L50-L104)
 - [rag_service.py:10-191](file://services/rag_service.py#L10-L191)
+- [ai_tools.py:122-195](file://services/ai_tools.py#L122-L195)
+- [ollama_service.py:369-451](file://services/ollama_service.py#L369-L451)

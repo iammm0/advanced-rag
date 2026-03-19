@@ -72,8 +72,8 @@ advanced-rag/
 
 ### 环境要求
 - Python 3.9+
-- MongoDB 4.4+
-- Qdrant（可通过Docker运行）
+- MongoDB 4.4+（**启动时若未连接不会阻止进程**，服务会先启动，依赖 MongoDB 的接口在连接前不可用）
+- Qdrant（可通过Docker运行；未连接时仅告警，不阻止启动）
 - Redis（可选，用于缓存）
 - Neo4j（可选，用于知识图谱）
 - Ollama（本地AI模型服务）
