@@ -1,7 +1,0 @@
-﻿feat: 统一 advanced-rag 品牌与文案
-
-- 将镜像名与集合名从 sensor_* 统一为 advanced_rag_*
-- README/TESTING/脚本示例中项目名改为 advanced-rag
-- 去除 BETA 标记，更新版本号与 API 说明
-- 前端切换为新的 favicon.svg 并更新导航与深度研究文案
-
