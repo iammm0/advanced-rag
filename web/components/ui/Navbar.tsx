@@ -7,8 +7,9 @@ export default function Navbar() {
   const pathname = usePathname();
 
   const navItems = [
-    { href: "/chat", label: "对话" },
+    { href: "/chat", label: "AI对话" },
     { href: "/documents", label: "知识空间" },
+    { href: "/settings", label: "高级配置" },
   ];
 
   return (

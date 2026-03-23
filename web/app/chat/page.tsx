@@ -836,11 +836,49 @@ export default function ChatPage() {
       // 6. 获取文档信息和知识库状态（省略，保持原有逻辑结构）
       // ... (Keeping simple for now, can add back if needed)
 
-      // 7. 根据模式选择调用不同的API - 开始生成回复
+      // 7. 深度研究价值门控（先判断值不值得进入深度研究）
+      let shouldUseDeepResearch = deepResearchEnabled && deepResearchFeatureEnabled;
+      if (shouldUseDeepResearch) {
+        const gate = await apiClient.evaluateDeepResearch({
+          message: userMessage.content,
+          conversation_id: currentConversationId,
+        });
+        if (gate.data) {
+          const topReasons = gate.data.reasons.slice(0, 2).join("；");
+          if (!gate.data.should_deep_research) {
+            shouldUseDeepResearch = false;
+            setAgentStatuses([]);
+            setDeepResearchResults([]);
+            setToast({
+              isOpen: true,
+              message: `本次问题评分 ${gate.data.score}/${gate.data.threshold}，先走常规模式：${topReasons}`,
+              type: "info",
+            });
+          } else {
+            setToast({
+              isOpen: true,
+              message: `已进入深度研究（评分 ${gate.data.score}/${gate.data.threshold}）：${topReasons}`,
+              type: "warning",
+            });
+          }
+        } else if (gate.error) {
+          // 评估失败时保守降级到常规模式，避免直接触发高成本流程
+          shouldUseDeepResearch = false;
+          setAgentStatuses([]);
+          setDeepResearchResults([]);
+          setToast({
+            isOpen: true,
+            message: `深度研究预评估失败，已改走常规模式：${gate.error}`,
+            type: "warning",
+          });
+        }
+      }
+
+      // 8. 根据模式选择调用不同的API - 开始生成回复
       setLoadingStep(4); // 步骤4: 生成回复
 
       // 深度研究模式
-      if (deepResearchEnabled && deepResearchFeatureEnabled) {
+      if (shouldUseDeepResearch) {
         // 每次启动深度研究模式时都显示提示
         setToast({
           isOpen: true,
@@ -2031,7 +2069,7 @@ export default function ChatPage() {
                       })()}
 
                       {spacePickerOpen && (
-                        <div className="absolute z-50 mt-2 w-[320px] max-w-[90vw] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl overflow-hidden">
+                        <div className="absolute left-0 right-0 sm:left-auto sm:right-auto z-50 mt-2 w-full min-w-0 sm:w-[min(100vw-2rem,56rem)] max-w-[min(100vw-1rem,56rem)] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl overflow-hidden">
                           <div className="p-3 border-b border-gray-200 dark:border-gray-700">
                             <div className="relative">
                               <input
@@ -2047,45 +2085,47 @@ export default function ChatPage() {
                             </div>
                           </div>
 
-                          <div className="max-h-72 overflow-y-auto">
-                            {knowledgeSpaces
-                              .filter((s) => {
-                                const q = spacePickerQuery.trim().toLowerCase();
-                                if (!q) return true;
-                                return (s.name || "").toLowerCase().includes(q) || (s.description || "").toLowerCase().includes(q);
-                              })
-                              .map((s) => {
-                                const checked = selectedKnowledgeSpaceIds.includes(s.id);
-                                return (
-                                  <label
-                                    key={s.id}
-                                    className="flex items-start gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60 border-b border-gray-100 dark:border-gray-800 last:border-b-0"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={(e) => {
-                                        const next = e.target.checked
-                                          ? Array.from(new Set([...selectedKnowledgeSpaceIds, s.id]))
-                                          : selectedKnowledgeSpaceIds.filter((id) => id !== s.id);
-                                        setSelectedKnowledgeSpaceIds(next);
-                                      }}
-                                      className="mt-0.5 w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded"
-                                    />
-                                    <div className="min-w-0 flex-1">
-                                      <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                                        {s.name}
-                                        {s.is_default ? <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">（默认）</span> : null}
-                                      </div>
-                                      {s.description ? (
-                                        <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
-                                          {s.description}
+                          <div className="max-h-[min(50vh,22rem)] overflow-y-auto p-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {knowledgeSpaces
+                                .filter((s) => {
+                                  const q = spacePickerQuery.trim().toLowerCase();
+                                  if (!q) return true;
+                                  return (s.name || "").toLowerCase().includes(q) || (s.description || "").toLowerCase().includes(q);
+                                })
+                                .map((s) => {
+                                  const checked = selectedKnowledgeSpaceIds.includes(s.id);
+                                  return (
+                                    <label
+                                      key={s.id}
+                                      className="flex items-start gap-2.5 p-2.5 rounded-lg cursor-pointer border border-gray-100 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-800/40 hover:bg-gray-100 dark:hover:bg-gray-800/80 min-w-0"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={(e) => {
+                                          const next = e.target.checked
+                                            ? Array.from(new Set([...selectedKnowledgeSpaceIds, s.id]))
+                                            : selectedKnowledgeSpaceIds.filter((id) => id !== s.id);
+                                          setSelectedKnowledgeSpaceIds(next);
+                                        }}
+                                        className="mt-0.5 w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100 break-words">
+                                          {s.name}
+                                          {s.is_default ? <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">（默认）</span> : null}
                                         </div>
-                                      ) : null}
-                                    </div>
-                                  </label>
-                                );
-                              })}
+                                        {s.description ? (
+                                          <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-3 mt-0.5">
+                                            {s.description}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                            </div>
                           </div>
 
                           <div className="p-2 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between gap-2">

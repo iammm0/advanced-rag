@@ -67,7 +67,7 @@ class ExerciseAgent(BaseAgent):
 - 解题思路（计算题和应用题）"""
             
             result = ""
-            async for chunk in self._call_llm(prompt=exercise_prompt, stream=stream):
+            async for chunk in self._call_llm(prompt=self.merge_system_into_task_prompt(exercise_prompt), stream=stream):
                 result += chunk
                 if stream:
                     yield {

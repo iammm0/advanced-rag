@@ -40,7 +40,7 @@ class ExampleGenerationAgent(BaseAgent):
 4. 每个示例包含完整的解题过程"""
             
             result = ""
-            async for chunk in self._call_llm(prompt=example_prompt, stream=stream):
+            async for chunk in self._call_llm(prompt=self.merge_system_into_task_prompt(example_prompt), stream=stream):
                 result += chunk
                 if stream:
                     yield {

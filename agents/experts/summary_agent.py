@@ -46,7 +46,7 @@ class SummaryAgent(BaseAgent):
 4. 学习建议"""
             
             result = ""
-            async for chunk in self._call_llm(prompt=summary_prompt, stream=stream):
+            async for chunk in self._call_llm(prompt=self.merge_system_into_task_prompt(summary_prompt), stream=stream):
                 result += chunk
                 if stream:
                     yield {

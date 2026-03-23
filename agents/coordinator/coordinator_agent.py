@@ -7,10 +7,26 @@ from utils.logger import logger
 class CoordinatorAgent(BaseAgent):
     """协调型Agent - 负责任务规划和分发"""
     
-    def __init__(self, model_name: Optional[str] = None, base_url: Optional[str] = None):
-        """初始化协调型Agent"""
-        super().__init__(model_name=model_name or "deepseek-r1:8b", base_url=base_url)
+    def __init__(
+        self,
+        model_name: Optional[str] = None,
+        base_url: Optional[str] = None,
+        system_prompt_override: Optional[str] = None,
+        available_expert_types: Optional[List[str]] = None,
+    ):
+        """初始化协调型Agent。available_expert_types 为当前允许调度的专家（未禁用的子智能体）。"""
+        super().__init__(
+            model_name=model_name or "deepseek-r1:8b",
+            base_url=base_url,
+            system_prompt_override=system_prompt_override,
+        )
         self.expert_agents = {}  # 专家Agent实例缓存
+        if available_expert_types is not None:
+            self._available_expert_types = list(available_expert_types)
+        else:
+            from agents.workflow.agent_workflow import AgentWorkflow
+
+            self._available_expert_types = list(AgentWorkflow.AGENT_MAP.keys())
     
     def get_default_model(self) -> str:
         """获取默认模型名称"""
@@ -73,7 +89,13 @@ class CoordinatorAgent(BaseAgent):
             # 1. 分析问题并规划任务
             logger.info(f"CoordinatorAgent: 开始分析问题 - {task[:50]}...")
             
-            planning_prompt = f"""用户问题：{task}
+            allowed_lines = "\n".join([f"- {a}" for a in self._available_expert_types])
+            base_instructions = self.get_effective_prompt()
+            planning_prompt = f"""{base_instructions}
+
+---
+
+用户问题：{task}
 
 请分析这个问题，智能选择需要的专家Agent（只选择必要的，不要选择所有Agent），并说明每个Agent的具体任务。
 
@@ -87,15 +109,8 @@ class CoordinatorAgent(BaseAgent):
     "reasoning": "选择这些Agent的理由"
 }}
 
-可用的agent_type值：
-- document_retrieval
-- formula_analysis
-- code_analysis
-- concept_explanation
-- example_generation
-- exercise
-- scientific_coding
-- summary
+当前允许使用的 agent_type（必须且仅能从中选择，不要发明新类型）：
+{allowed_lines}
 
 请只返回JSON，不要添加任何解释性文字。"""
             
@@ -133,10 +148,8 @@ class CoordinatorAgent(BaseAgent):
                 selected_agents = self._fallback_agent_selection(task)
                 reasoning = "JSON解析失败，使用默认选择逻辑"
             
-            # 验证选中的Agent是否有效
-            valid_agents = ["document_retrieval", "formula_analysis", "code_analysis", 
-                          "concept_explanation", "example_generation", "exercise", 
-                          "scientific_coding", "summary"]
+            # 验证选中的Agent是否有效且未被禁用
+            valid_agents = set(self._available_expert_types)
             selected_agents = [a for a in selected_agents if a in valid_agents]
             
             # 如果解析失败或没有选中任何Agent，使用默认选择
@@ -203,14 +216,17 @@ class CoordinatorAgent(BaseAgent):
             selected.append("scientific_coding")
         
         # 如果问题比较复杂，添加总结Agent
-        if len(selected) > 2:
+        if len(selected) > 2 and "summary" in self._available_expert_types:
             selected.append("summary")
         
-        # 如果什么都没选中，至少选择概念解释
+        # 如果什么都没选中，至少选择概念解释（若仍启用）
         if not selected:
-            selected = ["concept_explanation"]
+            if "concept_explanation" in self._available_expert_types:
+                selected = ["concept_explanation"]
+            elif self._available_expert_types:
+                selected = [self._available_expert_types[0]]
         
-        return selected
+        return [a for a in selected if a in self._available_expert_types]
     
     def parse_planning_result(self, planning_text: str) -> List[Dict[str, Any]]:
         """

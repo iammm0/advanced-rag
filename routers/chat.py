@@ -3,6 +3,7 @@ import json
 import os
 import uuid
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
@@ -81,6 +82,82 @@ class DeepResearchRequest(BaseModel):
     generation_config: Optional[Dict[str, Any]] = None  # 模型配置：{"llm_model": "...", "embedding_model": "...", "sub_agent_config": {...}}
 
 
+class DeepResearchEvaluateRequest(BaseModel):
+    """深度研究价值评估请求"""
+    query: str
+    conversation_id: Optional[str] = None
+
+
+class DeepResearchGateDecision(BaseModel):
+    """是否值得进入深度研究流程"""
+    should_deep_research: bool
+    score: int
+    threshold: int
+    reasons: List[str]
+
+
+def _evaluate_deep_research_value(query: str, threshold: int) -> DeepResearchGateDecision:
+    text = (query or "").strip()
+    if not text:
+        return DeepResearchGateDecision(
+            should_deep_research=False,
+            score=0,
+            threshold=threshold,
+            reasons=["问题为空，建议先补充明确问题。"],
+        )
+
+    score = 0
+    reasons: List[str] = []
+
+    # 复杂度：是否包含多步/对比/系统设计等迹象
+    complexity_kw = [
+        "对比", "比较", "差异", "权衡", "tradeoff", "架构", "方案", "设计", "流程", "多步", "系统",
+        "root cause", "排查", "优化", "评估", "策略", "选型", "benchmark",
+    ]
+    if any(k.lower() in text.lower() for k in complexity_kw):
+        score += 25
+        reasons.append("问题包含方案对比或系统性推理，复杂度较高。")
+
+    # 不确定性：疑问与开放性提问更可能需要更深入分析
+    q_count = text.count("?") + text.count("？")
+    if q_count >= 2 or re.search(r"(为什么|如何|怎么|是否|可行性|风险|边界)", text):
+        score += 20
+        reasons.append("问题存在较强不确定性，需要更多证据支撑。")
+
+    # 风险：高代价场景关键词
+    high_risk_kw = [
+        "生产", "线上", "合规", "隐私", "安全", "财务", "医疗", "法律", "发布", "事故", "SLA", "风控",
+    ]
+    if any(k.lower() in text.lower() for k in high_risk_kw):
+        score += 30
+        reasons.append("问题涉及高风险场景，错误代价较高。")
+
+    # 收益：长问题通常上下文丰富，深度研究收益更高
+    if len(text) >= 120:
+        score += 15
+        reasons.append("问题信息量较大，深度研究预期收益更高。")
+    elif len(text) <= 25:
+        score -= 15
+        reasons.append("问题较短，通常可用常规模式快速回答。")
+
+    # 成本约束：超短问题进一步抑制触发深度研究
+    if len(text.split()) <= 4 and len(text) <= 18:
+        score -= 10
+        reasons.append("问题可快速回答，进入深度研究的成本收益比偏低。")
+
+    score = max(0, min(100, score))
+    should = score >= threshold
+    if not reasons:
+        reasons.append("未命中高复杂度或高风险特征，优先走常规模式。")
+
+    return DeepResearchGateDecision(
+        should_deep_research=should,
+        score=score,
+        threshold=threshold,
+        reasons=reasons,
+    )
+
+
 @router.get("/models")
 async def list_models():
     """获取可用模型列表"""
@@ -92,6 +169,36 @@ async def list_models():
     except Exception as e:
         logger.error(f"获取模型列表失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/deep-research/evaluate", response_model=DeepResearchGateDecision)
+async def evaluate_deep_research(
+    request: DeepResearchEvaluateRequest,
+    _: None = Depends(require_mongodb),
+):
+    """在进入深度研究前，先做一次低成本价值评估。"""
+    try:
+        threshold = 60
+        try:
+            from services.runtime_config import get_runtime_config
+            cfg = await get_runtime_config()
+            raw = (cfg.get("params") or {}).get("deep_research_threshold", threshold)
+            threshold = max(0, min(100, int(raw)))
+        except Exception as e:
+            logger.warning(f"读取 deep_research_threshold 失败，使用默认阈值 60: {e}")
+
+        decision = _evaluate_deep_research_value(request.query, threshold)
+        logger.info(
+            f"深度研究价值评估完成 - score={decision.score} threshold={decision.threshold} "
+            f"should={decision.should_deep_research}"
+        )
+        return decision
+    except Exception as e:
+        logger.error(f"深度研究价值评估失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"深度研究价值评估失败: {str(e)}",
+        )
 
 
 @router.post("/conversations")

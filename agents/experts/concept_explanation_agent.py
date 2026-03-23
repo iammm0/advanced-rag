@@ -42,7 +42,7 @@ class ConceptExplanationAgent(BaseAgent):
 5. 与其他概念的关系"""
             
             result = ""
-            async for chunk in self._call_llm(prompt=explanation_prompt, stream=stream):
+            async for chunk in self._call_llm(prompt=self.merge_system_into_task_prompt(explanation_prompt), stream=stream):
                 result += chunk
                 if stream:
                     yield {

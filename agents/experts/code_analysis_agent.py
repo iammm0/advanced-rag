@@ -51,7 +51,7 @@ class CodeAnalysisAgent(BaseAgent):
 4. 相关技术说明"""
             
             result = ""
-            async for chunk in self._call_llm(prompt=analysis_prompt, stream=stream):
+            async for chunk in self._call_llm(prompt=self.merge_system_into_task_prompt(analysis_prompt), stream=stream):
                 result += chunk
                 if stream:
                     yield {

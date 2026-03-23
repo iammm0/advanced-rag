@@ -55,7 +55,7 @@ class DocumentRetrievalAgent(BaseAgent):
 请总结关键信息，并标注信息来源。"""
             
             summary = ""
-            async for chunk in self._call_llm(prompt=summary_prompt, stream=False):
+            async for chunk in self._call_llm(prompt=self.merge_system_into_task_prompt(summary_prompt), stream=False):
                 summary += chunk
             
             yield {

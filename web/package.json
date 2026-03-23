@@ -10,6 +10,7 @@
     "format": "biome format --write"
   },
   "dependencies": {
+    "@xyflow/react": "^12.10.1",
     "better-react-mathjax": "^2.4.0-beta-1",
     "isomorphic-dompurify": "^2.9.0",
     "mathjax": "^4.1.0",

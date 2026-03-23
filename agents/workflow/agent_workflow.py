@@ -16,31 +16,15 @@ from agents.experts.scientific_coding_agent import ScientificCodingAgent
 
 
 async def get_agent_config(agent_type: str) -> Dict[str, Optional[str]]:
-    """
-    从数据库获取Agent的模型配置
-    
-    Args:
-        agent_type: Agent类型
-        
-    Returns:
-        包含 inference_model 和 embedding_model 的字典
-    """
-    try:
-        from database.mongodb import mongodb
-        collection = mongodb.get_collection("agent_configs")
-        doc = await collection.find_one({"agent_type": agent_type})
-        
-        if doc:
-            return {
-                "inference_model": doc.get("inference_model"),
-                "embedding_model": doc.get("embedding_model")
-            }
-    except Exception as e:
-        logger.warning(f"获取Agent配置失败 ({agent_type}): {str(e)}，使用默认配置")
-    
+    """从数据库获取 Agent 配置（兼容旧调用：含模型与提示覆盖）。"""
+    from services.agent_settings import get_agent_config_from_db
+
+    cfg = await get_agent_config_from_db(agent_type)
     return {
-        "inference_model": None,
-        "embedding_model": None
+        "inference_model": cfg.get("inference_model"),
+        "embedding_model": cfg.get("embedding_model"),
+        "system_prompt": cfg.get("system_prompt"),
+        "enabled": cfg.get("enabled", True),
     }
 
 
@@ -65,19 +49,35 @@ class AgentWorkflow:
         self.coordinator = None
         self.expert_agents = {}  # 专家Agent实例缓存
         self._agent_configs_cache = {}  # Agent配置缓存
+        self._enabled_expert_types: List[str] = []
     
     async def _init_coordinator(self, generation_config: Optional[Dict[str, Any]] = None):
         """初始化协调型Agent（异步加载配置）"""
         if self.coordinator is None:
+            from services.agent_settings import list_enabled_expert_types
+
             model_name = None
             if generation_config:
                 model_name = generation_config.get("llm_model")
-            
+
             if not model_name:
                 config = await get_agent_config("coordinator")
                 model_name = config.get("inference_model")
-            
-            self.coordinator = CoordinatorAgent(model_name=model_name)
+
+            enabled = await list_enabled_expert_types()
+            if not enabled:
+                logger.warning("所有专家子智能体均被禁用，回退为启用全部专家类型")
+                enabled = list(self.AGENT_MAP.keys())
+            self._enabled_expert_types = enabled
+
+            coord_cfg = await get_agent_config("coordinator")
+            prompt_ov = coord_cfg.get("system_prompt")
+
+            self.coordinator = CoordinatorAgent(
+                model_name=model_name,
+                system_prompt_override=prompt_ov if prompt_ov else None,
+                available_expert_types=enabled,
+            )
     
     async def _get_expert_agent(self, agent_type: str, generation_config: Optional[Dict[str, Any]] = None):
         """获取专家Agent实例（延迟初始化，异步加载配置）"""
@@ -86,18 +86,24 @@ class AgentWorkflow:
             if agent_class:
                 model_name = None
                 if generation_config:
-                    # 可以在这里处理特定Agent的模型配置，目前统一使用llm_model
                     model_name = generation_config.get("llm_model")
-                
+
                 if not model_name:
-                    # 从数据库加载配置
                     if agent_type not in self._agent_configs_cache:
                         self._agent_configs_cache[agent_type] = await get_agent_config(agent_type)
-                    
+
                     config = self._agent_configs_cache[agent_type]
                     model_name = config.get("inference_model")
-                
-                self.expert_agents[agent_type] = agent_class(model_name=model_name)
+
+                if agent_type not in self._agent_configs_cache:
+                    self._agent_configs_cache[agent_type] = await get_agent_config(agent_type)
+                cfg_full = self._agent_configs_cache[agent_type]
+                prompt_ov = cfg_full.get("system_prompt")
+
+                self.expert_agents[agent_type] = agent_class(
+                    model_name=model_name,
+                    system_prompt_override=prompt_ov if prompt_ov else None,
+                )
             else:
                 logger.warning(f"未知的Agent类型: {agent_type}")
                 return None
@@ -157,9 +163,10 @@ class AgentWorkflow:
                         "reasoning": planning_reasoning
                     }
                     
-                    # 发送所有Agent的初始状态（包括未被选中的）
+                    # 发送所有Agent的初始状态（仅当前未被禁用的专家池）
                     if stream and selected_agents_from_coordinator:
-                        all_agent_types = list(self.AGENT_MAP.keys())
+                        pool = self._enabled_expert_types or list(self.AGENT_MAP.keys())
+                        all_agent_types = pool
                         for agent_type in all_agent_types:
                             if agent_type in selected_agents_from_coordinator:
                                 # 被选中的Agent，状态为pending（等待执行）
@@ -189,13 +196,14 @@ class AgentWorkflow:
                 logger.info(f"AgentWorkflow: 协调型Agent选择了 {len(agent_types)} 个Agent: {agent_types}")
                 logger.info(f"AgentWorkflow: 选择理由: {planning_reasoning}")
             else:
-                # 后备方案：使用所有Agent
-                agent_types = list(self.AGENT_MAP.keys())
-                logger.warning(f"AgentWorkflow: 协调型Agent未返回选择结果，使用所有Agent: {agent_types}")
+                # 后备方案：使用当前启用的全部专家
+                agent_types = list(self._enabled_expert_types) if self._enabled_expert_types else list(self.AGENT_MAP.keys())
+                logger.warning(f"AgentWorkflow: 协调型Agent未返回选择结果，使用启用中的专家: {agent_types}")
             
-            # 验证Agent类型有效性
+            # 验证Agent类型有效性且未被禁用
             valid_agent_types = set(self.AGENT_MAP.keys())
-            agent_types = [a for a in agent_types if a in valid_agent_types]
+            allowed = set(self._enabled_expert_types or list(self.AGENT_MAP.keys()))
+            agent_types = [a for a in agent_types if a in valid_agent_types and a in allowed]
             
             if not agent_types:
                 logger.warning("AgentWorkflow: 没有有效的Agent类型，使用默认Agent")
