@@ -29,6 +29,18 @@ class RuntimeParams(TypedDict, total=False):
     embedding_batch_size: int
     embedding_concurrency: int
     ocr_concurrency: int
+    http_log_level: str
+    http_log_request_level: str
+    http_log_success_level: str
+    http_log_slow_level: str
+    http_log_client_error_level: str
+    http_log_server_error_level: str
+    http_log_slow_threshold_s: float
+    http_log_success_enabled: bool
+    http_log_include_query: bool
+    http_log_include_client_ip: bool
+    http_log_include_request_body: bool
+    http_log_request_body_max_chars: int
 
 
 class RuntimeConfig(TypedDict, total=False):
@@ -57,6 +69,18 @@ _DEFAULT_LOW: RuntimeConfig = {
         "embedding_batch_size": 16,
         "embedding_concurrency": 1,
         "ocr_concurrency": 1,
+        "http_log_level": "INFO",
+        "http_log_request_level": "INFO",
+        "http_log_success_level": "INFO",
+        "http_log_slow_level": "WARNING",
+        "http_log_client_error_level": "WARNING",
+        "http_log_server_error_level": "ERROR",
+        "http_log_slow_threshold_s": 1.0,
+        "http_log_success_enabled": False,
+        "http_log_include_query": True,
+        "http_log_include_client_ip": True,
+        "http_log_include_request_body": False,
+        "http_log_request_body_max_chars": 1000,
     },
 }
 
@@ -79,6 +103,18 @@ _DEFAULT_HIGH: RuntimeConfig = {
         "embedding_batch_size": 50,
         "embedding_concurrency": 2,
         "ocr_concurrency": 1,
+        "http_log_level": "INFO",
+        "http_log_request_level": "INFO",
+        "http_log_success_level": "INFO",
+        "http_log_slow_level": "WARNING",
+        "http_log_client_error_level": "WARNING",
+        "http_log_server_error_level": "ERROR",
+        "http_log_slow_threshold_s": 1.0,
+        "http_log_success_enabled": False,
+        "http_log_include_query": True,
+        "http_log_include_client_ip": True,
+        "http_log_include_request_body": False,
+        "http_log_request_body_max_chars": 1000,
     },
 }
 

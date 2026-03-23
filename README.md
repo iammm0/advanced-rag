@@ -165,6 +165,35 @@ LOG_LEVEL=INFO
 LOG_FILE=./logs/advanced-rag.log
 ```
 
+### 高级日志配置（运行时）
+
+除 `.env` 中的 `LOG_LEVEL` 外，HTTP 请求日志支持通过运行时配置动态调整（无需重启服务）。  
+配置入口：`PUT /api/settings/runtime`，在 `params` 中传入日志参数。
+
+常见参数示例：
+
+```json
+{
+  "params": {
+    "http_log_level": "INFO",
+    "http_log_request_level": "DEBUG",
+    "http_log_success_enabled": true,
+    "http_log_success_level": "INFO",
+    "http_log_slow_threshold_s": 0.8,
+    "http_log_slow_level": "WARNING",
+    "http_log_client_error_level": "WARNING",
+    "http_log_server_error_level": "ERROR",
+    "http_log_include_query": true,
+    "http_log_include_client_ip": true,
+    "http_log_include_request_body": false,
+    "http_log_request_body_max_chars": 1200,
+    "http_log_exclude_prefixes": ["/health", "/api/health"]
+  }
+}
+```
+
+完整参数说明见：[日志中间件高级配置](docs/logging-settings.md)。
+
 ### 启动服务
 
 #### 开发模式
@@ -259,6 +288,7 @@ cat TESTING.md
 - [贡献指南](CONTRIBUTING.md) - 如何参与贡献
 - [行为准则](CODE_OF_CONDUCT.md) - 社区行为规范
 - [Redis配置](REDIS_CONFIG.md) - Redis缓存配置说明
+- [日志中间件高级配置](docs/logging-settings.md) - HTTP日志运行时配置说明
 - [分块器文档](chunking/README.md) - 文本分块功能说明
 - [解析器文档](parsers/README.md) - 文档解析功能说明
 - [工具文档](utils/README.md) - 工具函数说明
